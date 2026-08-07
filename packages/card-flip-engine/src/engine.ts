@@ -111,11 +111,22 @@ export class CardFlipEngine {
     }
     // Either this player just took the lead, or they hit the cap without catching up — their turn is over either way.
 
-    if (round.turnIndex + 1 >= round.turnOrder.length) {
-      this.settle(table, round);
-      return;
+    // Find the next player who still needs cards; settle only when everyone has reached the cap.
+    const n = round.turnOrder.length;
+    let nextFound = false;
+    for (let step = 1; step <= n; step++) {
+      const candidateIndex = (round.turnIndex + step) % n;
+      const candidateSeatIndex = round.turnOrder[candidateIndex] as number;
+      const candidate = this.requirePlayer(round, candidateSeatIndex);
+      if (candidate.hand.length < round.cardsPerPlayer) {
+        round.turnIndex = candidateIndex;
+        nextFound = true;
+        break;
+      }
     }
-    round.turnIndex += 1;
+    if (!nextFound) {
+      this.settle(table, round);
+    }
   }
 
   /** True if `challengerHand` strictly beats `leaderHand` — works at any hand size (a pair beats no pair, three of a kind beats a pair, etc., even below 5 cards); a tie leaves the existing leader in place. */
