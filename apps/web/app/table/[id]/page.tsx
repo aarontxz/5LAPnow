@@ -1,7 +1,6 @@
 "use client";
 
 import { use, useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
 import { AnimatePresence, motion } from "framer-motion";
 import type { PotShare } from "@5lapnow/game-engine";
 import { loadSession, saveSession, type Session } from "@/lib/session";
@@ -61,9 +60,9 @@ function chipDirection(relativeIndex: number): { x: number; y: number } {
 
 export default function TablePage({ params }: { params: Promise<{ id: string }> }) {
   const { id: tableId } = use(params);
-  const router = useRouter();
   const [session, setSession] = useState<Session | null>(null);
   const [ledgerOpen, setLedgerOpen] = useState(false);
+  const [linkCopied, setLinkCopied] = useState(false);
   const [games, setGames] = useState<Array<{ id: string; name: string; description: string }>>([]);
   const {
     snapshot,
@@ -83,16 +82,26 @@ export default function TablePage({ params }: { params: Promise<{ id: string }> 
     revealRabbit,
   } = useTableSocket(tableId);
 
+  // A shared table link can be someone's very first visit — no local session
+  // yet — so provision a nameless guest session right here instead of
+  // bouncing them to the lobby (which would strand them away from the table
+  // they were actually sent to join).
   useEffect(() => {
-    const s = loadSession();
-    if (!s) {
-      router.push("/");
+    function onSession(s: Session) {
+      setSession(s);
+      // Load all games so the owner can pick next game / edit rotation.
+      void api.listGames(s.userId).then((g) => setGames(g.map((x) => ({ id: x.id, name: x.name, description: x.description }))));
+    }
+    const existing = loadSession();
+    if (existing) {
+      onSession(existing);
       return;
     }
-    setSession(s);
-    // Load all games so the owner can pick next game / edit rotation.
-    void api.listGames(s.userId).then((g) => setGames(g.map((x) => ({ id: x.id, name: x.name, description: x.description }))));
-  }, [router]);
+    void api.createGuestSession({}).then((s) => {
+      saveSession(s);
+      onSession(s);
+    });
+  }, []);
 
   const hand = snapshot?.hand ?? null;
   const isComplete = hand?.phase === "complete";
@@ -136,18 +145,52 @@ export default function TablePage({ params }: { params: Promise<{ id: string }> 
   const legalActions = hand?.legalActions ?? null;
   const activeSeats = snapshot?.seats.filter((s) => s.status === "active").length ?? 0;
 
+  async function copyShareLink() {
+    const url = `${window.location.origin}/table/${tableId}`;
+    try {
+      await navigator.clipboard.writeText(url);
+    } catch {
+      // Clipboard API can be unavailable (older Safari, non-HTTPS, etc.) — fall back to a hidden textarea.
+      const textarea = document.createElement("textarea");
+      textarea.value = url;
+      textarea.style.position = "fixed";
+      textarea.style.opacity = "0";
+      document.body.appendChild(textarea);
+      textarea.select();
+      document.execCommand("copy");
+      document.body.removeChild(textarea);
+    }
+    setLinkCopied(true);
+    setTimeout(() => setLinkCopied(false), 1500);
+  }
+
   return (
     <main className="relative flex flex-1 flex-col overflow-hidden px-2 py-2 pb-20 sm:px-6 sm:py-6 sm:pb-6">
       <header className="flex items-start justify-between gap-2">
-        <motion.button
-          whileHover={{ scale: 1.03 }}
-          whileTap={{ scale: 0.96 }}
-          onClick={() => setLedgerOpen(true)}
-          className="flex shrink-0 items-center gap-1.5 rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-medium text-white/70 shadow-sm hover:border-white/20 hover:bg-white/10 hover:text-white sm:px-3.5 sm:py-2 sm:text-sm"
-        >
-          <span aria-hidden>📒</span>
-          Log &amp; Ledger
-        </motion.button>
+        <div className="flex items-center gap-2">
+          <motion.button
+            whileHover={{ scale: 1.03 }}
+            whileTap={{ scale: 0.96 }}
+            onClick={() => setLedgerOpen(true)}
+            className="flex shrink-0 items-center gap-1.5 rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-medium text-white/70 shadow-sm hover:border-white/20 hover:bg-white/10 hover:text-white sm:px-3.5 sm:py-2 sm:text-sm"
+          >
+            <span aria-hidden>📒</span>
+            Log &amp; Ledger
+          </motion.button>
+          <motion.button
+            whileHover={{ scale: 1.03 }}
+            whileTap={{ scale: 0.96 }}
+            onClick={copyShareLink}
+            className={`flex shrink-0 items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium shadow-sm transition-colors sm:px-3.5 sm:py-2 sm:text-sm ${
+              linkCopied
+                ? "border-emerald-400/50 bg-emerald-400/10 text-emerald-300"
+                : "border-white/10 bg-white/5 text-white/70 hover:border-white/20 hover:bg-white/10 hover:text-white"
+            }`}
+          >
+            <span aria-hidden>{linkCopied ? "✅" : "🔗"}</span>
+            {linkCopied ? "Copied!" : "Share"}
+          </motion.button>
+        </div>
         <div className="flex items-center gap-2">
           {mySeat && (
             <>
@@ -362,12 +405,7 @@ export default function TablePage({ params }: { params: Promise<{ id: string }> 
 
         <AnimatePresence>
           {mySeat && snapshot?.handInProgress && (
-            <ActionControls
-              key="action-controls"
-              legalActions={legalActions}
-              onAction={sendAction}
-              holeCards={hand?.players.find((p) => p.seatIndex === mySeatIndex)?.holeCards ?? null}
-            />
+            <ActionControls key="action-controls" legalActions={legalActions} onAction={sendAction} />
           )}
         </AnimatePresence>
       </div>
