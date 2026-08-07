@@ -9,6 +9,7 @@ import {
 } from "@nestjs/websockets";
 import type { Server, Socket } from "socket.io";
 import type {
+  ClangRankPayload,
   ClientToServerEvents,
   HandActionRequest,
   SeatAdjustStackPayload,
@@ -18,7 +19,9 @@ import type {
   SeatRequestPayload,
   ServerToClientEvents,
 } from "@5lapnow/shared-types";
+import { DEFAULT_CLANG_STAKE, DEFAULT_EAT_PAYMENT_PER_CARD } from "@5lapnow/clang-engine";
 import { TablesService } from "./tables.service";
+import { ClangService } from "../clang/clang.service";
 import { UsersService } from "../users/users.service";
 import { GUEST_COOKIE_NAME, parseCookieHeader } from "../users/cookie";
 
@@ -42,6 +45,7 @@ export class TablesGateway implements OnGatewayInit, OnModuleInit {
 
   constructor(
     private readonly tablesService: TablesService,
+    private readonly clangService: ClangService,
     private readonly usersService: UsersService
   ) {}
 
@@ -172,9 +176,22 @@ export class TablesGateway implements OnGatewayInit, OnModuleInit {
     });
   }
 
+  /**
+   * The one owner-facing "Start" button covers both engines: it deals the
+   * next hand/round using whatever game is currently active or queued via
+   * table:setNextGame — poker or Clang, resolved here rather than requiring
+   * two separate start actions on the frontend.
+   */
   @SubscribeMessage("table:startHand")
   async onStartHand(@ConnectedSocket() socket: AppSocket, @MessageBody() payload: { tableId: string }): Promise<void> {
-    await this.guard(socket, () => this.tablesService.startHand(payload.tableId, socket.data.userId));
+    await this.guard(socket, async () => {
+      const nextKind = await this.tablesService.resolveNextGameKind(payload.tableId);
+      if (nextKind === "clang") {
+        await this.clangService.startRound(payload.tableId, socket.data.userId, DEFAULT_CLANG_STAKE, DEFAULT_EAT_PAYMENT_PER_CARD);
+      } else {
+        await this.tablesService.startHand(payload.tableId, socket.data.userId);
+      }
+    });
   }
 
   @SubscribeMessage("table:setNextGame")
@@ -195,6 +212,53 @@ export class TablesGateway implements OnGatewayInit, OnModuleInit {
       if (!seat) throw new Error("You are not seated at this table");
       await this.tablesService.applyAction(payload.tableId, seat.seatIndex, socket.data.userId, payload.action);
     });
+  }
+
+  @SubscribeMessage("clang:play")
+  async onClangPlay(@ConnectedSocket() socket: AppSocket, @MessageBody() payload: ClangRankPayload): Promise<void> {
+    await this.guard(socket, async () => {
+      const seatIndex = this.requireSeatIndex(payload.tableId, socket.data.userId);
+      await this.clangService.play(payload.tableId, seatIndex, payload.rank);
+    });
+  }
+
+  @SubscribeMessage("clang:eat")
+  async onClangEat(@ConnectedSocket() socket: AppSocket, @MessageBody() payload: { tableId: string }): Promise<void> {
+    await this.guard(socket, async () => {
+      const seatIndex = this.requireSeatIndex(payload.tableId, socket.data.userId);
+      await this.clangService.eat(payload.tableId, seatIndex);
+    });
+  }
+
+  @SubscribeMessage("clang:passEat")
+  async onClangPassEat(@ConnectedSocket() socket: AppSocket, @MessageBody() payload: { tableId: string }): Promise<void> {
+    await this.guard(socket, async () => {
+      const seatIndex = this.requireSeatIndex(payload.tableId, socket.data.userId);
+      await this.clangService.passEat(payload.tableId, seatIndex);
+    });
+  }
+
+  @SubscribeMessage("clang:callClang")
+  async onClangCallClang(@ConnectedSocket() socket: AppSocket, @MessageBody() payload: { tableId: string }): Promise<void> {
+    await this.guard(socket, async () => {
+      const seatIndex = this.requireSeatIndex(payload.tableId, socket.data.userId);
+      await this.clangService.callClang(payload.tableId, seatIndex);
+    });
+  }
+
+  @SubscribeMessage("clang:callClangInstant")
+  async onClangCallClangInstant(@ConnectedSocket() socket: AppSocket, @MessageBody() payload: { tableId: string }): Promise<void> {
+    await this.guard(socket, async () => {
+      const seatIndex = this.requireSeatIndex(payload.tableId, socket.data.userId);
+      await this.clangService.callInstantClang(payload.tableId, seatIndex);
+    });
+  }
+
+  private requireSeatIndex(tableId: string, userId: string): number {
+    const runtime = this.tablesService.getRuntimeTable(tableId);
+    const seat = runtime.table.seats.find((s) => s.playerId === userId);
+    if (!seat) throw new Error("You are not seated at this table");
+    return seat.seatIndex;
   }
 
   private async guard(socket: AppSocket, fn: () => Promise<void> | void): Promise<void> {

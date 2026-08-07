@@ -13,7 +13,8 @@ export const MAX_SEATS = 10;
 export interface TableConfig {
   id: string;
   name?: string;
-  gameDefinitionId: string;
+  /** Absent for non-poker games (e.g. Clang), which have no GameDefinition. */
+  gameDefinitionId?: string;
   smallBlind: number;
   bigBlind: number;
   minBuyIn: number;

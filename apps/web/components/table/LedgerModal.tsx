@@ -2,11 +2,31 @@
 
 import { useEffect, useState } from "react";
 import type { HandActionLogEntry } from "@5lapnow/game-engine";
-import type { HandLogEntry, TableLedgerResponse } from "@5lapnow/shared-types";
+import type { ClangRoundLogEntry, HandLogEntry, TableGameKind, TableLedgerResponse } from "@5lapnow/shared-types";
 import { Modal } from "./Modal";
 import { PlayingCard } from "./PlayingCard";
 import { api } from "@/lib/api";
 import { cn } from "@/lib/cn";
+
+const CLANG_OUTCOME_LABEL: Record<ClangRoundLogEntry["outcome"]["type"], string> = {
+  instant: "Instant Clang (21)",
+  call: "Called Clang",
+  forced: "Deck exhausted — forced showdown",
+};
+
+/** Net chips won or lost per seat for a Clang round: settlement payments plus any starting-hand bonus payouts. */
+function clangNetsBySeat(round: ClangRoundLogEntry): Map<number, number> {
+  const nets = new Map<number, number>();
+  const apply = (payments: ClangRoundLogEntry["outcome"]["payments"]) => {
+    for (const p of payments) {
+      nets.set(p.toSeatIndex, (nets.get(p.toSeatIndex) ?? 0) + p.amount);
+      nets.set(p.fromSeatIndex, (nets.get(p.fromSeatIndex) ?? 0) - p.amount);
+    }
+  };
+  apply(round.outcome.payments);
+  for (const bonus of round.bonusHits) apply(bonus.payments);
+  return nets;
+}
 
 function actionLabel(action: HandActionLogEntry): string {
   switch (action.type) {
@@ -51,7 +71,17 @@ function actionsByStreet(actions: HandActionLogEntry[]): Array<[string, HandActi
   return [...byStreet.entries()];
 }
 
-export function LedgerModal({ tableId, open, onClose }: { tableId: string; open: boolean; onClose: () => void }) {
+export function LedgerModal({
+  tableId,
+  gameKind = "poker",
+  open,
+  onClose,
+}: {
+  tableId: string;
+  gameKind?: TableGameKind;
+  open: boolean;
+  onClose: () => void;
+}) {
   const [data, setData] = useState<TableLedgerResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [tab, setTab] = useState<"ledger" | "log">("ledger");
@@ -135,7 +165,80 @@ export function LedgerModal({ tableId, open, onClose }: { tableId: string; open:
           </div>
         )}
 
-        {!loading && data && tab === "log" && (
+        {!loading && data && tab === "log" && gameKind === "clang" && (
+          <div className="grid min-h-0 flex-1 grid-cols-1 gap-3 overflow-y-auto sm:grid-cols-2 lg:grid-cols-3">
+            {data.clangRounds.length === 0 && <p className="text-sm text-neutral-400">No hands played yet.</p>}
+            {[...data.clangRounds].reverse().map((r) => {
+              const nets = clangNetsBySeat(r);
+              const netEntries = r.players
+                .map((p) => ({ player: p, net: nets.get(p.seatIndex) ?? 0 }))
+                .filter(({ net }) => net !== 0)
+                .sort((a, b) => b.net - a.net);
+              const expanded = expandedHand === r.roundNumber;
+              return (
+                <button
+                  key={r.roundNumber}
+                  onClick={() => setExpandedHand(expanded ? null : r.roundNumber)}
+                  className={cn(
+                    "h-fit rounded-lg border border-neutral-200 bg-neutral-50 px-3 py-3 text-left text-sm",
+                    expanded && "sm:col-span-2 lg:col-span-3"
+                  )}
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="font-medium text-neutral-900">Hand #{r.roundNumber}</span>
+                    <span className="text-xs text-neutral-400">{new Date(r.playedAt).toLocaleTimeString()}</span>
+                  </div>
+                  <div className="mt-1 text-xs text-neutral-500">
+                    {CLANG_OUTCOME_LABEL[r.outcome.type]} · stake {r.stake} · eat {r.eatPaymentPerCard}/card
+                  </div>
+                  <div className="mt-2 flex flex-col gap-0.5 text-xs text-neutral-500">
+                    {netEntries.map(({ player, net }) => (
+                      <span key={player.seatIndex}>
+                        <span className="text-neutral-700">{player.displayName ?? `Seat ${player.seatIndex}`}</span>{" "}
+                        <span className={cn("font-medium", net > 0 ? "text-emerald-600" : "text-red-600")}>
+                          {net > 0 ? "+" : ""}
+                          {net}
+                        </span>
+                      </span>
+                    ))}
+                  </div>
+
+                  {expanded && (
+                    <div className="mt-3 grid grid-cols-1 gap-3 border-t border-neutral-200 pt-3 sm:grid-cols-2 lg:grid-cols-4">
+                      {r.players.map((p) => (
+                        <div key={p.seatIndex}>
+                          <div className="text-[10px] font-semibold uppercase tracking-wide text-neutral-400">
+                            {p.displayName ?? `Seat ${p.seatIndex}`} · value {p.handValue}
+                          </div>
+                          <div className="mt-1 flex gap-1">
+                            {p.hand.map((c, i) => (
+                              <PlayingCard key={i} card={c} small />
+                            ))}
+                          </div>
+                        </div>
+                      ))}
+                      {r.bonusHits.length > 0 && (
+                        <div className="sm:col-span-2 lg:col-span-4">
+                          <div className="text-[10px] font-semibold uppercase tracking-wide text-neutral-400">Bonus hits</div>
+                          <div className="mt-1 flex flex-col gap-0.5 text-xs text-neutral-600">
+                            {r.bonusHits.map((b, i) => (
+                              <span key={i}>
+                                {r.players.find((p) => p.seatIndex === b.seatIndex)?.displayName ?? `Seat ${b.seatIndex}`} hit {b.category} — paid{" "}
+                                {b.payout} by everyone
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+        )}
+
+        {!loading && data && tab === "log" && gameKind !== "clang" && (
           <div className="grid min-h-0 flex-1 grid-cols-1 gap-3 overflow-y-auto sm:grid-cols-2 lg:grid-cols-3">
             {data.hands.length === 0 && <p className="text-sm text-neutral-400">No hands played yet.</p>}
             {[...data.hands].reverse().map((h) => {

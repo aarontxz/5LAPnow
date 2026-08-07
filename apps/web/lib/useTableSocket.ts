@@ -47,6 +47,11 @@ export function useTableSocket(tableId: string) {
   const setNextGame = (gameDefinitionId: string) => socketRef.current?.emit("table:setNextGame", { tableId, gameDefinitionId });
   const sendAction = (action: PlayerAction) => socketRef.current?.emit("hand:action", { tableId, action });
   const revealRabbit = () => socketRef.current?.emit("hand:revealRabbit", { tableId });
+  const clangPlay = (rank: number) => socketRef.current?.emit("clang:play", { tableId, rank });
+  const clangEat = () => socketRef.current?.emit("clang:eat", { tableId });
+  const clangPassEat = () => socketRef.current?.emit("clang:passEat", { tableId });
+  const clangCallClang = () => socketRef.current?.emit("clang:callClang", { tableId });
+  const clangCallClangInstant = () => socketRef.current?.emit("clang:callClangInstant", { tableId });
 
   return {
     snapshot,
@@ -65,5 +70,10 @@ export function useTableSocket(tableId: string) {
     setNextGame,
     sendAction,
     revealRabbit,
+    clangPlay,
+    clangEat,
+    clangPassEat,
+    clangCallClang,
+    clangCallClangInstant,
   };
 }

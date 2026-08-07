@@ -11,7 +11,14 @@ import {
   TableConfig,
 } from "@5lapnow/game-engine";
 import type { Card } from "@5lapnow/cards";
-import type { CreateTableRequest, HandLogEntry, PlayerLedgerEntry, TableLedgerResponse, TableSummary } from "@5lapnow/shared-types";
+import type {
+  ClangRoundLogEntry,
+  CreateTableRequest,
+  HandLogEntry,
+  PlayerLedgerEntry,
+  TableLedgerResponse,
+  TableSummary,
+} from "@5lapnow/shared-types";
 import { PrismaService } from "../prisma/prisma.service";
 import { GamesService } from "../games/games.service";
 import { RuntimeTable, buildTableSnapshot, NextGameOverride } from "./table-snapshot";
@@ -37,25 +44,30 @@ export class TablesService implements OnModuleInit {
    * had going into that hand, as if it never happened.
    */
   async onModuleInit(): Promise<void> {
-    const [rows, handCounts] = await Promise.all([
-      this.prisma.table.findMany({ include: { seats: { include: { user: true } }, owner: true } }),
+    const [rows, handCounts, clangRoundCounts] = await Promise.all([
+      this.prisma.table.findMany({ include: { seats: { include: { user: true } }, owner: true, gameDefinition: true } }),
       this.prisma.hand.groupBy({ by: ["tableId"], _max: { handNumber: true } }),
+      this.prisma.clangRound.groupBy({ by: ["tableId"], _max: { roundNumber: true } }),
     ]);
     const maxHandNumberByTable = new Map(handCounts.map((h) => [h.tableId, h._max.handNumber ?? 0]));
+    const maxRoundNumberByTable = new Map(clangRoundCounts.map((r) => [r.tableId, r._max.roundNumber ?? 0]));
 
     for (const row of rows) {
-      let gameDefinition;
-      try {
-        gameDefinition = await this.gamesService.getDefinition(row.gameDefinitionId);
-      } catch {
-        continue; // game definition is gone (or invalid) — can't run this table, skip it
+      const gameKind = row.gameDefinition.engine;
+      let gameDefinition = null;
+      if (gameKind === "poker") {
+        try {
+          gameDefinition = await this.gamesService.getDefinition(row.gameDefinitionId);
+        } catch {
+          continue; // game definition is gone (or invalid) — can't run this table, skip it
+        }
       }
 
       const config: TableConfig = {
         id: row.id,
         gameDefinitionId: row.gameDefinitionId,
-        smallBlind: row.smallBlind,
-        bigBlind: row.bigBlind,
+        smallBlind: row.smallBlind ?? 0,
+        bigBlind: row.bigBlind ?? 0,
         minBuyIn: row.minBuyIn,
         maxBuyIn: row.maxBuyIn,
       };
@@ -75,10 +87,20 @@ export class TablesService implements OnModuleInit {
         tableId: row.id,
         ownerId: row.ownerId,
         ownerDisplayName: row.owner.displayName ?? "Guest",
+        gameKind,
+        gameDefinitionId: row.gameDefinitionId,
+        gameName: row.gameDefinition.name,
         gameDefinition,
         table,
         hand: null,
         handCounter: maxHandNumberByTable.get(row.id) ?? 0,
+        // Any hand/round in progress at restart time is unrecoverable (live
+        // deal state is never persisted) and is simply dropped, mirroring the
+        // same precedent for both game kinds.
+        clangRound: null,
+        clangRoundCounter: maxRoundNumberByTable.get(row.id) ?? 0,
+        clangLastStake: null,
+        clangLastEatPaymentPerCard: null,
         pendingRequests: [],
         pendingStackAdjustments: new Map(),
         standRequests: new Set(),
@@ -95,16 +117,23 @@ export class TablesService implements OnModuleInit {
     for (const listener of this.listeners) listener(tableId);
   }
 
+  /** Public entry point for ClangService (which mutates a RuntimeTable it doesn't own the map for) to trigger a snapshot broadcast. */
+  notifyChanged(tableId: string): void {
+    this.emitChanged(tableId);
+  }
+
   async createTable(dto: CreateTableRequest, ownerId: string, ownerDisplayName: string | null): Promise<TableSummary> {
-    const gameDefinition = await this.gamesService.getDefinition(dto.gameDefinitionId);
+    const defRow = await this.gamesService.getRow(dto.gameDefinitionId);
+    const gameKind = defRow.engine;
+    const gameDefinition = gameKind === "poker" ? await this.gamesService.getDefinition(defRow.id) : null;
 
     const row = await this.prisma.table.create({
       data: {
         name: "",
-        gameDefinitionId: gameDefinition.id,
+        gameDefinitionId: defRow.id,
         ownerId,
-        smallBlind: dto.smallBlind,
-        bigBlind: dto.bigBlind,
+        smallBlind: gameKind === "poker" ? dto.smallBlind : null,
+        bigBlind: gameKind === "poker" ? dto.bigBlind : null,
         minBuyIn: dto.minBuyIn,
         maxBuyIn: dto.maxBuyIn,
       },
@@ -112,9 +141,9 @@ export class TablesService implements OnModuleInit {
 
     const config: TableConfig = {
       id: row.id,
-      gameDefinitionId: gameDefinition.id,
-      smallBlind: dto.smallBlind,
-      bigBlind: dto.bigBlind,
+      gameDefinitionId: defRow.id,
+      smallBlind: dto.smallBlind ?? 0,
+      bigBlind: dto.bigBlind ?? 0,
       minBuyIn: dto.minBuyIn,
       maxBuyIn: dto.maxBuyIn,
     };
@@ -123,10 +152,17 @@ export class TablesService implements OnModuleInit {
       tableId: row.id,
       ownerId,
       ownerDisplayName,
+      gameKind,
+      gameDefinitionId: defRow.id,
+      gameName: defRow.name,
       gameDefinition,
       table: createEmptyTable(config),
       hand: null,
       handCounter: 0,
+      clangRound: null,
+      clangRoundCounter: 0,
+      clangLastStake: null,
+      clangLastEatPaymentPerCard: null,
       pendingRequests: [],
       pendingStackAdjustments: new Map(),
       standRequests: new Set(),
@@ -144,6 +180,7 @@ export class TablesService implements OnModuleInit {
     const runtime = this.getRuntimeTable(tableId);
     return {
       id: row.id,
+      gameKind: row.gameDefinition.engine,
       gameDefinitionId: row.gameDefinitionId,
       gameName: row.gameDefinition.name,
       smallBlind: row.smallBlind,
@@ -279,8 +316,7 @@ export class TablesService implements OnModuleInit {
     const seat = runtime.table.seats[seatIndex];
     if (!seat || seat.playerId !== userId) throw new ForbiddenException("You are not seated there");
 
-    const handInProgress = runtime.hand !== null && runtime.hand.phase !== "complete";
-    if (!handInProgress) {
+    if (!this.isRoundInProgress(runtime)) {
       await this.clearSeat(runtime, seatIndex, userId);
       this.emitChanged(tableId);
       return;
@@ -303,6 +339,13 @@ export class TablesService implements OnModuleInit {
 
     await this.clearSeat(runtime, seatIndex, seat.playerId);
     this.emitChanged(tableId);
+  }
+
+  /** True if a poker hand or Clang round is currently live (not just dealt-and-settled) at this table. */
+  isRoundInProgress(runtime: RuntimeTable): boolean {
+    return runtime.gameKind === "poker"
+      ? runtime.hand !== null && runtime.hand.phase !== "complete"
+      : runtime.clangRound !== null && runtime.clangRound.phase !== "complete";
   }
 
   private async clearSeat(runtime: RuntimeTable, seatIndex: number, userId: string): Promise<void> {
@@ -381,7 +424,7 @@ export class TablesService implements OnModuleInit {
     this.emitChanged(tableId);
   }
 
-  private async applyStackAdjustment(runtime: RuntimeTable, seatIndex: number, newStack: number): Promise<void> {
+  async applyStackAdjustment(runtime: RuntimeTable, seatIndex: number, newStack: number): Promise<void> {
     const seat = runtime.table.seats[seatIndex];
     if (!seat || !seat.playerId) return;
     const delta = newStack - seat.stack;
@@ -403,11 +446,19 @@ export class TablesService implements OnModuleInit {
     });
   }
 
+  /** Poker-only: which engine the owner's next "Start" click will actually run — the queued override, or the table's current game. Drives TablesGateway's routing between startHand/ClangService.startRound. */
+  async resolveNextGameKind(tableId: string): Promise<"poker" | "clang"> {
+    const runtime = this.getRuntimeTable(tableId);
+    const targetId = runtime.nextGameOverride?.gameDefinitionId ?? runtime.gameDefinitionId;
+    const row = await this.gamesService.getRow(targetId);
+    return row.engine;
+  }
+
   async startHand(tableId: string, requesterUserId: string): Promise<void> {
     const runtime = this.getRuntimeTable(tableId);
     if (requesterUserId !== runtime.ownerId) throw new ForbiddenException("Only the table owner can start a hand");
-    if (runtime.hand && runtime.hand.phase !== "complete") {
-      throw new BadRequestException("A hand is already in progress");
+    if (this.isRoundInProgress(runtime)) {
+      throw new BadRequestException("A hand or round is already in progress");
     }
 
     for (const [seatIndex, adjustment] of runtime.pendingStackAdjustments) {
@@ -418,14 +469,18 @@ export class TablesService implements OnModuleInit {
     }
     runtime.pendingStackAdjustments.clear();
 
-    // Resolve the game for this hand: one-off override falls back to current game.
-    let gameDefinition = runtime.gameDefinition;
-    if (runtime.nextGameOverride) {
-      gameDefinition = await this.gamesService.getDefinition(runtime.nextGameOverride.gameDefinitionId);
-      runtime.nextGameOverride = null;
-    }
-    if (gameDefinition.id !== runtime.gameDefinition.id) {
+    // Resolve the game for this hand: one-off override falls back to current game
+    // — which may itself be switching the table's engine (e.g. coming from Clang).
+    const targetGameDefinitionId = runtime.nextGameOverride?.gameDefinitionId ?? runtime.gameDefinitionId;
+    runtime.nextGameOverride = null;
+    const gameDefinition = await this.gamesService.getDefinition(targetGameDefinitionId);
+
+    if (runtime.gameKind !== "poker" || gameDefinition.id !== runtime.gameDefinitionId) {
+      runtime.gameKind = "poker";
       runtime.gameDefinition = gameDefinition;
+      runtime.gameDefinitionId = gameDefinition.id;
+      runtime.gameName = gameDefinition.name;
+      runtime.clangRound = null;
       await this.prisma.table.update({ where: { id: tableId }, data: { gameDefinitionId: gameDefinition.id } });
     }
 
@@ -437,11 +492,12 @@ export class TablesService implements OnModuleInit {
     this.emitChanged(tableId);
   }
 
+  /** Queues which game plays next (any engine) — applied by startHand/ClangService.startRound whichever actually runs next. */
   async setNextGame(tableId: string, requesterUserId: string, gameDefinitionId: string): Promise<void> {
     const runtime = this.getRuntimeTable(tableId);
     if (requesterUserId !== runtime.ownerId) throw new ForbiddenException("Only the table owner can set the next game");
-    const def = await this.gamesService.getDefinition(gameDefinitionId);
-    runtime.nextGameOverride = { gameDefinitionId: def.id, gameName: def.name };
+    const row = await this.gamesService.getRow(gameDefinitionId);
+    runtime.nextGameOverride = { gameDefinitionId: row.id, gameName: row.name };
     this.emitChanged(tableId);
   }
 
@@ -482,7 +538,7 @@ export class TablesService implements OnModuleInit {
 
   async applyAction(tableId: string, seatIndex: number, userId: string, action: PlayerAction): Promise<void> {
     const runtime = this.getRuntimeTable(tableId);
-    if (!runtime.hand) throw new BadRequestException("No hand in progress");
+    if (!runtime.hand || !runtime.gameDefinition) throw new BadRequestException("No hand in progress");
     const seat = runtime.table.seats[seatIndex];
     if (!seat || seat.playerId !== userId) throw new ForbiddenException("You are not seated there");
     if (runtime.hand.bettingRound?.turnSeatIndex !== seatIndex) throw new ForbiddenException("It is not your turn");
@@ -503,7 +559,7 @@ export class TablesService implements OnModuleInit {
    */
   private async advanceHand(tableId: string, runtime: RuntimeTable): Promise<void> {
     const hand = runtime.hand;
-    if (!hand) return;
+    if (!hand || !runtime.gameDefinition) return;
     const engine = new DeclarativeEngine(runtime.gameDefinition);
 
     while (
@@ -527,7 +583,7 @@ export class TablesService implements OnModuleInit {
     }
   }
 
-  private async settleStandRequests(runtime: RuntimeTable): Promise<void> {
+  async settleStandRequests(runtime: RuntimeTable): Promise<void> {
     for (const seatIndex of [...runtime.standRequests]) {
       const seat = runtime.table.seats[seatIndex];
       if (seat?.playerId) {
@@ -540,7 +596,7 @@ export class TablesService implements OnModuleInit {
 
   private async persistHandResult(tableId: string, runtime: RuntimeTable, pots: PotResult[]): Promise<void> {
     const hand = runtime.hand;
-    if (!hand) return;
+    if (!hand || !runtime.gameDefinition) return;
 
     const players = [...hand.players.entries()].map(([seatIndex, handPlayer]) => {
       const seat = runtime.table.seats[seatIndex];
@@ -587,8 +643,9 @@ export class TablesService implements OnModuleInit {
   async getLedger(tableId: string): Promise<TableLedgerResponse> {
     const runtime = this.getRuntimeTable(tableId);
 
-    const [hands, transactions] = await Promise.all([
+    const [hands, clangRounds, transactions] = await Promise.all([
       this.prisma.hand.findMany({ where: { tableId }, orderBy: { handNumber: "asc" } }),
+      this.prisma.clangRound.findMany({ where: { tableId }, orderBy: { roundNumber: "asc" } }),
       this.prisma.chipTransaction.findMany({ where: { tableId }, include: { user: true }, orderBy: { createdAt: "asc" } }),
     ]);
 
@@ -622,6 +679,16 @@ export class TablesService implements OnModuleInit {
         players: h.players as unknown as HandLogEntry["players"],
         actions: h.actions as unknown as HandLogEntry["actions"],
         playedAt: h.playedAt.toISOString(),
+      })),
+      clangRounds: clangRounds.map((r) => ({
+        roundNumber: r.roundNumber,
+        stake: r.stake,
+        eatPaymentPerCard: r.eatPaymentPerCard,
+        outcome: r.outcome as unknown as ClangRoundLogEntry["outcome"],
+        bonusHits: r.bonusHits as unknown as ClangRoundLogEntry["bonusHits"],
+        players: r.players as unknown as ClangRoundLogEntry["players"],
+        actions: r.actions as unknown as ClangRoundLogEntry["actions"],
+        playedAt: r.playedAt.toISOString(),
       })),
       players,
     };

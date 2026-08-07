@@ -24,13 +24,24 @@ enum GameDefinitionSource {
   ai_generated
 }
 
+/// Which engine interprets this GameDefinition: DeclarativeEngine (streets/betting
+/// rounds, packages/game-engine) for poker variants, or ClangEngine (discard/draw/
+/// turn state machine, packages/clang-engine) for Clang. A table's game mode is
+/// entirely determined by which GameDefinition it points at — there is no
+/// separate per-table game-kind flag.
+enum GameEngine {
+  poker
+  clang
+}
+
 model GameDefinition {
   id          String               @id
   name        String
   description String
   source      GameDefinitionSource
-  /// Validated against the GameDefinition zod schema in @5lapnow/game-engine before being persisted.
-  definition  Json
+  engine      GameEngine           @default(poker)
+  /// Validated against the GameDefinition zod schema in @5lapnow/game-engine before being persisted. Null for non-poker engines (e.g. Clang, which has no streets/blinds to describe).
+  definition  Json?
   createdById String?
   createdBy   User?                @relation(fields: [createdById], references: [id])
   createdAt   DateTime             @default(now())
@@ -71,13 +82,15 @@ enum TableStatus {
 model Table {
   id               String         @id @default(uuid())
   name             String?
+  /// Determines the table's game mode: DeclarativeEngine (poker) or ClangEngine, via gameDefinition.engine.
   gameDefinitionId String
   gameDefinition   GameDefinition @relation(fields: [gameDefinitionId], references: [id])
   /// The table owner approves seat requests and sets/edits approved buy-ins; defaults to whoever created the table.
   ownerId          String
   owner            User           @relation(fields: [ownerId], references: [id])
-  smallBlind       Int
-  bigBlind         Int
+  /// Meaningless for Clang tables (null there).
+  smallBlind       Int?
+  bigBlind         Int?
   minBuyIn         Int
   maxBuyIn         Int
   maxSeats         Int            @default(10)
@@ -87,6 +100,7 @@ model Table {
   createdAt        DateTime       @default(now())
   seats            Seat[]
   hands            Hand[]
+  clangRounds      ClangRound[]
   chipTransactions ChipTransaction[]
 }
 
@@ -125,6 +139,27 @@ model Hand {
   /// Ordered HandActionLogEntry[] (posts/folds/checks/calls/bets/raises) from @5lapnow/game-engine.
   actions          Json           @default("[]")
   playedAt         DateTime       @default(now())
+}
+
+/// Clang round history, parallel to Hand but for the Clang ruleset — kept separate
+/// since Hand's gameDefinitionId FK is required and its Json columns are documented
+/// as poker-specific shapes.
+model ClangRound {
+  id                String   @id @default(uuid())
+  tableId           String
+  table             Table    @relation(fields: [tableId], references: [id])
+  roundNumber       Int
+  stake             Int
+  eatPaymentPerCard Int
+  /// { type: "instant"|"call"|"forced", callerSeatIndex: number|null, winnerSeatIndices: number[], payments: [{fromSeatIndex,toSeatIndex,amount}] }
+  outcome           Json
+  /// Starting-hand bounties paid at deal time: [{seatIndex, category, payout, payments}].
+  bonusHits         Json     @default("[]")
+  /// Snapshot of every dealt-in seat at settlement: {seatIndex, userId, displayName, hand: Card[], handValue}
+  players           Json
+  /// Ordered ClangActionLogEntry[] (deal/bonus/play/eat/eatDeclined/draw/callClangInstant/callClang/forcedShowdown)
+  actions           Json     @default("[]")
+  playedAt    DateTime @default(now())
 }
 
 enum ChipTransactionType {

@@ -6,7 +6,7 @@ function withDescription(shares: PotShare[], description: string): PotShare[] {
   return shares.map((s) => ({ ...s, description }));
 }
 
-function splitAmountEvenly(amount: number, winnerSeatIndices: number[], remainderOrder: number[]): PotShare[] {
+export function splitAmountEvenly(amount: number, winnerSeatIndices: number[], remainderOrder: number[]): PotShare[] {
   const base = Math.floor(amount / winnerSeatIndices.length);
   let remainder = amount - base * winnerSeatIndices.length;
   const shares = new Map<number, number>();

@@ -1,5 +1,7 @@
 import type { Card } from "@5lapnow/cards";
 import type { SeatStatus, HandPhase, PotResult, LegalActionInfo } from "@5lapnow/game-engine";
+import type { ClangHandCategory, ClangPayment, ClangPhase } from "@5lapnow/clang-engine";
+import type { TableGameKind } from "./rest.js";
 
 export interface PublicSeatView {
   seatIndex: number;
@@ -50,9 +52,62 @@ export interface SeatRequestView {
   requestedBuyIn: number;
 }
 
+export interface ClangPendingEatView {
+  discarderSeatIndex: number;
+  eaterSeatIndex: number;
+  rank: number;
+}
+
+export interface ClangResultView {
+  type: "instant" | "call" | "forced";
+  callerSeatIndex: number | null;
+  winnerSeatIndices: number[];
+  payments: ClangPayment[];
+}
+
+export interface ClangBonusHitView {
+  seatIndex: number;
+  category: ClangHandCategory;
+  payout: number;
+}
+
+export interface ClangPlayerView {
+  seatIndex: number;
+  handCardCount: number;
+  /** Populated only for the viewer's own seat while live, or every seat once the round is complete. */
+  hand: Card[] | null;
+  /** Live for the viewer's own seat while the round is running; populated for everyone once the round is complete. */
+  handValue: number | null;
+  /** True if the last card in `hand` is the one this seat most recently drew (cleared once anyone else acts). Only meaningful when `hand` is populated. */
+  justDrewLastCard: boolean;
+}
+
+export interface ClangLegalActions {
+  canPlay: boolean;
+  canCallClangNormal: boolean;
+  canCallInstantClang: boolean;
+  canEat: boolean;
+  canPassEat: boolean;
+}
+
+export interface ClangRoundView {
+  roundNumber: number;
+  stake: number;
+  eatPaymentPerCard: number;
+  phase: ClangPhase;
+  turnSeatIndex: number | null;
+  pendingEat: ClangPendingEatView | null;
+  players: ClangPlayerView[];
+  bonusHits: ClangBonusHitView[];
+  /** Populated only for the viewer when they're seated in this round. */
+  legalActions: ClangLegalActions | null;
+  result: ClangResultView | null;
+  drawPileCount: number;
+}
 
 export interface TableSnapshot {
   tableId: string;
+  gameKind: TableGameKind;
   gameDefinitionId: string;
   gameName: string;
   ownerId: string;
@@ -64,7 +119,11 @@ export interface TableSnapshot {
   buttonSeatIndex: number | null;
   handInProgress: boolean;
   hand: HandView | null;
-  /** Which game will be used for the next hand (owner-set override, or current game as default). */
+  /** Which game will be used for the next hand/round (owner-set override, any engine — or the current game as default). */
   nextGameDefinitionId: string;
   nextGameName: string;
+  clangRound: ClangRoundView | null;
+  /** Prefill hints for the owner's next "Deal" form, from the last round dealt at this table. */
+  clangLastStake: number | null;
+  clangLastEatPaymentPerCard: number | null;
 }

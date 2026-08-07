@@ -1,4 +1,5 @@
 import { BadRequestException, Injectable, NotFoundException } from "@nestjs/common";
+import { GameEngine } from "@prisma/client";
 import { GameDefinition, safeParseGameDefinition } from "@5lapnow/game-engine";
 import { GameGenerationRequestView, validateGameGenerationPrompt } from "@5lapnow/shared-types";
 import { PrismaService } from "../prisma/prisma.service";
@@ -17,18 +18,27 @@ export class GamesService {
       name: row.name,
       description: row.description,
       source: row.source,
-      definition: row.definition as unknown as GameDefinition,
+      engine: row.engine,
+      /** Null for non-poker engines (e.g. Clang, which has no streets/blinds to describe). */
+      definition: row.definition ? (row.definition as unknown as GameDefinition) : null,
     }));
   }
 
+  /** Poker-only: parses and validates the DeclarativeEngine-shaped definition JSON. Throws for non-poker rows. */
   async getDefinition(id: string): Promise<GameDefinition> {
-    const row = await this.prisma.gameDefinition.findUnique({ where: { id } });
-    if (!row) throw new NotFoundException(`Game definition ${id} not found`);
+    const row = await this.getRow(id);
+    if (row.engine !== "poker") throw new BadRequestException(`Game definition ${id} is not a poker game`);
     const parsed = safeParseGameDefinition(row.definition);
     if (!parsed.success) {
       throw new Error(`Stored game definition ${id} failed schema validation: ${parsed.error.message}`);
     }
     return parsed.data;
+  }
+
+  async getRow(id: string): Promise<{ id: string; name: string; description: string; engine: GameEngine; definition: unknown }> {
+    const row = await this.prisma.gameDefinition.findUnique({ where: { id } });
+    if (!row) throw new NotFoundException(`Game definition ${id} not found`);
+    return row;
   }
 
   async requestGeneration(userId: string, prompt: string): Promise<GameGenerationRequestView> {

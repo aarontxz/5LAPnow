@@ -1,5 +1,8 @@
 import type { Card } from "@5lapnow/cards";
 import type { HandActionLogEntry, PotResult } from "@5lapnow/game-engine";
+import type { ClangActionLogEntry, ClangHandCategory, ClangPayment } from "@5lapnow/clang-engine";
+
+export type TableGameKind = "poker" | "clang";
 
 export interface CreateGuestSessionRequest {
   /** Optional: a guest can enter the lobby with no name yet, and pick one when they first request a seat. */
@@ -12,9 +15,11 @@ export interface CreateGuestSessionResponse {
 }
 
 export interface CreateTableRequest {
+  /** Determines the table's game mode — every table (poker or Clang) is tied to a real GameDefinition row. */
   gameDefinitionId: string;
-  smallBlind: number;
-  bigBlind: number;
+  /** Ignored for non-poker game definitions (e.g. Clang, which has no blinds). */
+  smallBlind?: number;
+  bigBlind?: number;
   minBuyIn: number;
   maxBuyIn: number;
 }
@@ -22,10 +27,11 @@ export interface CreateTableRequest {
 export interface TableSummary {
   id: string;
   name?: string;
+  gameKind: TableGameKind;
   gameDefinitionId: string;
   gameName: string;
-  smallBlind: number;
-  bigBlind: number;
+  smallBlind: number | null;
+  bigBlind: number | null;
   minBuyIn: number;
   maxBuyIn: number;
   seatedCount: number;
@@ -62,7 +68,33 @@ export interface PlayerLedgerEntry {
   isSeated: boolean;
 }
 
+export interface ClangRoundLogPlayer {
+  seatIndex: number;
+  userId: string | null;
+  displayName: string | null;
+  hand: Card[];
+  handValue: number;
+}
+
+export interface ClangRoundLogEntry {
+  roundNumber: number;
+  stake: number;
+  eatPaymentPerCard: number;
+  outcome: {
+    type: "instant" | "call" | "forced";
+    callerSeatIndex: number | null;
+    winnerSeatIndices: number[];
+    payments: ClangPayment[];
+  };
+  bonusHits: Array<{ seatIndex: number; category: ClangHandCategory; payout: number; payments: ClangPayment[] }>;
+  players: ClangRoundLogPlayer[];
+  actions: ClangActionLogEntry[];
+  playedAt: string;
+}
+
 export interface TableLedgerResponse {
   hands: HandLogEntry[];
+  /** Empty for poker tables. */
+  clangRounds: ClangRoundLogEntry[];
   players: PlayerLedgerEntry[];
 }

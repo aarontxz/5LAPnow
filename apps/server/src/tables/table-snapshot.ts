@@ -1,5 +1,16 @@
 import { GameDefinition, HandState, TableState, getLegalActions } from "@5lapnow/game-engine";
-import { HandPlayerView, HandView, PublicSeatView, SeatRequestView, TableSnapshot } from "@5lapnow/shared-types";
+import { ClangRoundState, handValue } from "@5lapnow/clang-engine";
+import {
+  ClangLegalActions,
+  ClangPlayerView,
+  ClangRoundView,
+  HandPlayerView,
+  HandView,
+  PublicSeatView,
+  SeatRequestView,
+  TableGameKind,
+  TableSnapshot,
+} from "@5lapnow/shared-types";
 
 export interface NextGameOverride {
   gameDefinitionId: string;
@@ -24,16 +35,26 @@ export interface RuntimeTable {
   ownerId: string;
   /** Null until the owner has taken a seat (and thus picked a name) at their own table. */
   ownerDisplayName: string | null;
-  gameDefinition: GameDefinition;
+  gameKind: TableGameKind;
+  /** The GameDefinition row this table is linked to — every table has one, poker or Clang. */
+  gameDefinitionId: string;
+  gameName: string;
+  /** The parsed DeclarativeEngine-shaped definition; null for non-poker engines (e.g. Clang, which has no streets/blinds to parse). */
+  gameDefinition: GameDefinition | null;
   table: TableState;
   hand: HandState | null;
   handCounter: number;
+  clangRound: ClangRoundState | null;
+  clangRoundCounter: number;
+  /** Prefill hints for the owner's next "Deal" form. */
+  clangLastStake: number | null;
+  clangLastEatPaymentPerCard: number | null;
   pendingRequests: SeatRequestState[];
-  /** Keyed by seatIndex; applied at the start of the next hand (see TablesService.startHand). */
+  /** Keyed by seatIndex; applied at the start of the next hand/round (see TablesService.startHand / ClangService.startRound). */
   pendingStackAdjustments: Map<number, PendingStackAdjustment>;
-  /** Seats (by seatIndex) that asked to stand up mid-hand; auto-check/folded until the hand completes, then evicted. */
+  /** Seats (by seatIndex) that asked to stand up mid-hand/round; auto-check/folded (poker) or held over (clang) until it completes, then evicted. */
   standRequests: Set<number>;
-  /** One-hand game override set by the owner; cleared at the start of the next hand. */
+  /** One-hand game override set by the owner; cleared at the start of the next hand. Poker-only. */
   nextGameOverride: NextGameOverride | null;
 }
 
@@ -43,13 +64,74 @@ function totalPot(hand: HandState): number {
   return sum;
 }
 
+function buildClangRoundView(round: ClangRoundState, table: TableState, viewerUserId: string | null): ClangRoundView {
+  const complete = round.phase === "complete";
+
+  // The most recent draw (if any) is always the last card pushed onto that
+  // seat's hand — cleared as soon as any other action happens (their next
+  // discard/eat, or anyone else's turn), so this always points at whoever
+  // last drew and is now the "current" state for everyone to see.
+  const lastAction = round.actions[round.actions.length - 1];
+  const justDrewSeatIndex = lastAction?.type === "draw" ? lastAction.seatIndex : null;
+
+  const players: ClangPlayerView[] = round.players.map((p) => {
+    const isOwnSeat = viewerUserId !== null && table.seats[p.seatIndex]?.playerId === viewerUserId;
+    const reveal = complete || isOwnSeat;
+    return {
+      seatIndex: p.seatIndex,
+      handCardCount: p.hand.length,
+      hand: reveal ? p.hand : null,
+      handValue: reveal ? handValue(p.hand) : null,
+      justDrewLastCard: reveal && p.seatIndex === justDrewSeatIndex && p.hand.length > 0,
+    };
+  });
+
+  const turnSeatIndex =
+    round.phase === "turn" || round.phase === "instant-window" ? (round.turnOrder[round.turnIndex] ?? null) : null;
+
+  const viewerSeatIndex = viewerUserId !== null ? (table.seats.find((s) => s.playerId === viewerUserId)?.seatIndex ?? null) : null;
+  const viewerPlayer = viewerSeatIndex !== null ? round.players.find((p) => p.seatIndex === viewerSeatIndex) : undefined;
+
+  let legalActions: ClangLegalActions | null = null;
+  if (viewerPlayer && viewerSeatIndex !== null && !complete) {
+    const isMyTurn = turnSeatIndex === viewerSeatIndex;
+    const canAct = isMyTurn && (round.phase === "turn" || round.phase === "instant-window");
+    const isEligibleEater = round.phase === "awaiting-eat" && round.pendingEat?.eaterSeatIndex === viewerSeatIndex;
+    const eaterHasMatch = isEligibleEater && round.pendingEat
+      ? viewerPlayer.hand.some((c) => c.rank === round.pendingEat!.rank)
+      : false;
+
+    legalActions = {
+      canPlay: canAct,
+      canCallClangNormal: canAct,
+      canCallInstantClang: round.phase === "instant-window" && round.allowInstantClang && handValue(viewerPlayer.hand) === 21,
+      canEat: isEligibleEater && eaterHasMatch,
+      canPassEat: isEligibleEater,
+    };
+  }
+
+  return {
+    roundNumber: round.roundNumber,
+    stake: round.stake,
+    eatPaymentPerCard: round.eatPaymentPerCard,
+    phase: round.phase,
+    turnSeatIndex,
+    pendingEat: round.pendingEat,
+    players,
+    bonusHits: round.bonusHits.map((h) => ({ seatIndex: h.seatIndex, category: h.category, payout: h.payout })),
+    legalActions,
+    result: round.result,
+    drawPileCount: round.drawPile.length,
+  };
+}
+
 /**
  * Builds the per-viewer TableSnapshot: a player only ever sees their own
- * hole cards while a hand is live; everyone's cards are revealed once the
- * hand reaches "complete" (unless they folded, in which case they stay hidden).
+ * hole cards (poker) or hand (Clang) while a hand/round is live; everyone's
+ * cards are revealed once it reaches "complete" (poker: unless they folded).
  */
 export function buildTableSnapshot(runtime: RuntimeTable, viewerUserId: string | null): TableSnapshot {
-  const { table, hand, gameDefinition } = runtime;
+  const { table, hand, gameDefinition, gameKind } = runtime;
 
   const seats: PublicSeatView[] = table.seats.map((s) => {
     const pending = runtime.pendingStackAdjustments.get(s.seatIndex);
@@ -65,7 +147,7 @@ export function buildTableSnapshot(runtime: RuntimeTable, viewerUserId: string |
   });
 
   let handView: HandView | null = null;
-  if (hand) {
+  if (hand && gameDefinition) {
     const street = gameDefinition.streets[hand.streetIndex];
     const players: HandPlayerView[] = [...hand.players.values()].map((p) => {
       const isOwnSeat = viewerUserId !== null && table.seats[p.seatIndex]?.playerId === viewerUserId;
@@ -113,21 +195,31 @@ export function buildTableSnapshot(runtime: RuntimeTable, viewerUserId: string |
   }));
 
   const nextGame: NextGameOverride =
-    runtime.nextGameOverride ??
-    { gameDefinitionId: gameDefinition.id, gameName: gameDefinition.name };
+    runtime.nextGameOverride ?? { gameDefinitionId: runtime.gameDefinitionId, gameName: runtime.gameName };
+
+  const clangRound = runtime.clangRound ? buildClangRoundView(runtime.clangRound, table, viewerUserId) : null;
+
+  const handInProgress =
+    gameKind === "poker"
+      ? hand !== null && hand.phase !== "complete"
+      : runtime.clangRound !== null && runtime.clangRound.phase !== "complete";
 
   return {
     tableId: runtime.tableId,
-    gameDefinitionId: gameDefinition.id,
-    gameName: gameDefinition.name,
+    gameKind,
+    gameDefinitionId: runtime.gameDefinitionId,
+    gameName: runtime.gameName,
     ownerId: runtime.ownerId,
     ownerDisplayName: runtime.ownerDisplayName,
     seats,
     pendingRequests,
     buttonSeatIndex: table.buttonSeatIndex,
-    handInProgress: hand !== null && hand.phase !== "complete",
+    handInProgress,
     hand: handView,
     nextGameDefinitionId: nextGame.gameDefinitionId,
     nextGameName: nextGame.gameName,
+    clangRound,
+    clangLastStake: runtime.clangLastStake,
+    clangLastEatPaymentPerCard: runtime.clangLastEatPaymentPerCard,
   };
 }

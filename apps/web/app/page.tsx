@@ -40,7 +40,8 @@ interface GameOption {
   name: string;
   description: string;
   source: string;
-  definition: GameDefinition;
+  engine: "poker" | "clang";
+  definition: GameDefinition | null;
 }
 
 export default function LobbyPage() {
