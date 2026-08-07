@@ -11,7 +11,7 @@ import { cn } from "@/lib/cn";
 const SEAT_BOX = "min-h-20 min-w-20 sm:min-h-32 sm:min-w-44";
 const EMPTY_BOX_CLASS = cn(
   SEAT_BOX,
-  "flex flex-col items-center justify-center gap-1 rounded-xl border border-dashed border-white/20 bg-white/5 p-1.5 sm:p-2"
+  "flex flex-col items-center justify-center gap-1 rounded-xl border border-dashed border-white/20 bg-neutral-800 p-1.5 sm:p-2"
 );
 // Plain numeric text input: no browser up/down spinner arrows (a type="number" quirk).
 const AMOUNT_INPUT_CLASS =
@@ -312,7 +312,7 @@ export function SeatView({
           : isTurn
             ? "border-emerald-400"
             : "border-white/10",
-        isViewer ? "bg-purple-500/10" : "bg-white/5",
+        isViewer ? "bg-purple-900/60" : "bg-neutral-800",
         isOwner && "cursor-pointer hover:border-white/30"
       )}
     >

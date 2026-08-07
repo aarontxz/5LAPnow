@@ -11,7 +11,7 @@ import { cn } from "@/lib/cn";
 const SEAT_BOX = "min-h-20 min-w-20 sm:min-h-32 sm:min-w-44";
 const EMPTY_BOX_CLASS = cn(
   SEAT_BOX,
-  "flex flex-col items-center justify-center gap-1 rounded-xl border border-dashed border-white/20 bg-white/5 p-1.5 sm:p-2"
+  "flex flex-col items-center justify-center gap-1 rounded-xl border border-dashed border-white/20 bg-neutral-800 p-1.5 sm:p-2"
 );
 const AMOUNT_INPUT_CLASS =
   "w-full rounded-lg border border-white/10 bg-black/40 px-3 py-2 text-center text-base text-white placeholder:text-white/30";
@@ -316,7 +316,7 @@ export function ClangSeatView({
               : isDiscarder
                 ? "border-white/30"
                 : "border-white/10",
-        isViewer ? "bg-purple-500/10" : "bg-white/5",
+        isViewer ? "bg-purple-900/60" : "bg-neutral-800",
         isOwner && "cursor-pointer hover:border-white/30"
       )}
     >
