@@ -128,10 +128,6 @@ export default function LobbyPage() {
 
   return (
     <main className="mx-auto flex w-full max-w-4xl flex-1 flex-col gap-6 px-4 py-8 sm:gap-8 sm:px-6 sm:py-12">
-      <header className="flex flex-wrap items-center justify-between gap-2">
-        <h1 className="text-xl font-semibold sm:text-2xl">Lobby</h1>
-      </header>
-
       <section className="rounded-2xl border border-white/10 bg-white/5 p-4 sm:p-6">
         <h2 className="mb-4 text-lg font-medium">Create a table</h2>
         <div className="flex flex-col gap-4 sm:flex-row sm:items-end">
