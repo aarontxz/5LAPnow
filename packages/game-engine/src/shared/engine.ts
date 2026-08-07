@@ -54,15 +54,17 @@ export class DeclarativeEngine {
       });
     }
 
-    const boards: Card[][] = Array.from({ length: this.gameDefinition.boards }, () => [] as Card[]);
+    const boardArrays: Card[][] = Array.from({ length: this.gameDefinition.boards }, () => [] as Card[]);
 
     const hand: HandState = {
       gameDefinition: this.gameDefinition,
       handNumber,
       buttonSeatIndex,
       streetIndex: -1,
-      board: boards[0]!,
-      boards,
+      board: boardArrays[0]!,
+      boards: boardArrays,
+      rabbitBoard: null,
+      rabbitBoards: null,
       deck,
       players,
       seatOrder,

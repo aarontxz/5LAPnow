@@ -5,12 +5,14 @@ import { useRouter } from "next/navigation";
 import { AnimatePresence, motion } from "framer-motion";
 import type { PotShare } from "@5lapnow/game-engine";
 import { loadSession, saveSession, type Session } from "@/lib/session";
+import { api } from "@/lib/api";
 import { useTableSocket } from "@/lib/useTableSocket";
 import { SeatView } from "@/components/table/SeatView";
 import { PlayingCard } from "@/components/table/PlayingCard";
 import { ActionControls } from "@/components/table/ActionControls";
 import { AnimatedNumber } from "@/components/table/AnimatedNumber";
 import { LedgerModal } from "@/components/table/LedgerModal";
+import { RotationEditor } from "@/components/table/RotationEditor";
 
 const MAX_SEATS = 10;
 
@@ -62,6 +64,9 @@ export default function TablePage({ params }: { params: Promise<{ id: string }> 
   const router = useRouter();
   const [session, setSession] = useState<Session | null>(null);
   const [ledgerOpen, setLedgerOpen] = useState(false);
+  const [rotationOpen, setRotationOpen] = useState(false);
+  const [games, setGames] = useState<Array<{ id: string; name: string }>>([]);
+  const [nextGamePickerOpen, setNextGamePickerOpen] = useState(false);
   const {
     snapshot,
     error,
@@ -76,7 +81,10 @@ export default function TablePage({ params }: { params: Promise<{ id: string }> 
     transferOwnership,
     stand,
     startHand,
+    setNextGame,
+    setRotation,
     sendAction,
+    revealRabbit,
   } = useTableSocket(tableId);
 
   useEffect(() => {
@@ -86,6 +94,8 @@ export default function TablePage({ params }: { params: Promise<{ id: string }> 
       return;
     }
     setSession(s);
+    // Load all games so the owner can pick next game / edit rotation.
+    void api.listGames(s.userId).then((g) => setGames(g.map((x) => ({ id: x.id, name: x.name }))));
   }, [router]);
 
   const hand = snapshot?.hand ?? null;
@@ -118,6 +128,8 @@ export default function TablePage({ params }: { params: Promise<{ id: string }> 
   const isOwner = snapshot?.ownerId === session.userId;
   const board = hand?.board ?? [];
   const boards = hand?.boards ?? null;
+  const rabbitBoard = hand?.rabbitBoard ?? null;
+  const rabbitBoards = hand?.rabbitBoards ?? null;
   const legalActions = hand?.legalActions ?? null;
   const activeSeats = snapshot?.seats.filter((s) => s.status === "active").length ?? 0;
 
@@ -168,7 +180,12 @@ export default function TablePage({ params }: { params: Promise<{ id: string }> 
                     {b.map((c, i) => (
                       <PlayingCard key={i} card={c} dealDelay={i * 0.12} />
                     ))}
-                    {Array.from({ length: 5 - b.length }).map((_, i) => (
+                    {(rabbitBoards?.[bi] ?? []).map((c, i) => (
+                      <div key={`r-${i}`} className="opacity-40">
+                        <PlayingCard card={c} dealDelay={i * 0.08} />
+                      </div>
+                    ))}
+                    {Array.from({ length: 5 - b.length - (rabbitBoards?.[bi]?.length ?? 0) }).map((_, i) => (
                       <div key={`ph-${i}`} className="h-16 w-11 rounded-md border border-dashed border-white/10 sm:h-24 sm:w-16" />
                     ))}
                   </div>
@@ -179,7 +196,12 @@ export default function TablePage({ params }: { params: Promise<{ id: string }> 
                 {board.map((c, i) => (
                   <PlayingCard key={i} card={c} dealDelay={i * 0.12} />
                 ))}
-                {Array.from({ length: 5 - board.length }).map((_, i) => (
+                {(rabbitBoard ?? []).map((c, i) => (
+                  <div key={`r-${i}`} className="opacity-40">
+                    <PlayingCard card={c} dealDelay={i * 0.08} />
+                  </div>
+                ))}
+                {Array.from({ length: 5 - board.length - (rabbitBoard?.length ?? 0) }).map((_, i) => (
                   <div key={`ph-${i}`} className="h-16 w-11 rounded-md border border-dashed border-white/10 sm:h-24 sm:w-16" />
                 ))}
               </div>
@@ -287,21 +309,80 @@ export default function TablePage({ params }: { params: Promise<{ id: string }> 
       <div className="fixed inset-x-2 bottom-4 z-40 flex flex-col items-center gap-2 sm:inset-x-auto sm:bottom-6 sm:right-6 sm:items-end">
         <AnimatePresence>
           {isOwner && !snapshot?.handInProgress && activeSeats >= 2 && (
-            <motion.button
+            <motion.div
               key="start-hand"
               initial={{ opacity: 0, scale: 0.9 }}
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.9 }}
-              whileHover={{ scale: 1.04 }}
-              whileTap={{ scale: 0.96 }}
               transition={{ duration: 0.2 }}
-              onClick={startHand}
-              className="rounded-full bg-emerald-600 px-6 py-2.5 text-sm font-medium text-white hover:bg-emerald-500"
+              className="flex flex-col items-end gap-1"
             >
-              Start hand
+              {/* Next game label + picker */}
+              <div className="flex items-center gap-1.5 text-xs text-white/50">
+                <span>Next: <span className="text-white/80">{snapshot?.nextGameName}</span></span>
+                {games.length > 1 && (
+                  <button
+                    onClick={() => setNextGamePickerOpen((o) => !o)}
+                    className="rounded px-1 py-0.5 text-[10px] text-white/40 hover:text-white/70"
+                  >
+                    change
+                  </button>
+                )}
+                {isOwner && (
+                  <button
+                    onClick={() => setRotationOpen(true)}
+                    className="rounded px-1 py-0.5 text-[10px] text-white/40 hover:text-white/70"
+                  >
+                    rotation ↗
+                  </button>
+                )}
+              </div>
+
+              {/* One-hand game override picker */}
+              {nextGamePickerOpen && (
+                <div className="flex flex-col overflow-hidden rounded-xl border border-white/10 bg-black/80 shadow-xl">
+                  {games.map((g) => (
+                    <button
+                      key={g.id}
+                      onClick={() => { setNextGame(g.id); setNextGamePickerOpen(false); }}
+                      className={`px-4 py-2 text-left text-sm hover:bg-white/10 ${g.id === snapshot?.nextGameDefinitionId ? "text-emerald-400" : "text-white"}`}
+                    >
+                      {g.name}
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              <motion.button
+                whileHover={{ scale: 1.04 }}
+                whileTap={{ scale: 0.96 }}
+                onClick={startHand}
+                className="rounded-full bg-emerald-600 px-6 py-2.5 text-sm font-medium text-white hover:bg-emerald-500"
+              >
+                Start hand
+              </motion.button>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* Rabbit hunting button: visible when hand is complete but board wasn't fully dealt */}
+        <AnimatePresence>
+          {mySeat && hand?.phase === "complete" && hand.rabbitBoard === null &&
+            (hand.board.length < 5 || (hand.boards && hand.boards.some((b) => b.length < 5))) && (
+            <motion.button
+              key="rabbit"
+              initial={{ opacity: 0, y: 6 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: 6 }}
+              transition={{ duration: 0.2 }}
+              onClick={revealRabbit}
+              className="rounded-full border border-white/20 bg-black/60 px-4 py-2 text-xs text-white/70 hover:bg-black/80 hover:text-white"
+            >
+              🐰 See cards
             </motion.button>
           )}
         </AnimatePresence>
+
         <AnimatePresence>
           {mySeat && snapshot?.handInProgress && (
             <ActionControls key="action-controls" legalActions={legalActions} onAction={sendAction} />
@@ -310,6 +391,15 @@ export default function TablePage({ params }: { params: Promise<{ id: string }> 
       </div>
 
       <LedgerModal tableId={tableId} open={ledgerOpen} onClose={() => setLedgerOpen(false)} />
+      {isOwner && (
+        <RotationEditor
+          open={rotationOpen}
+          onClose={() => setRotationOpen(false)}
+          currentRotation={snapshot?.rotation ?? []}
+          games={games}
+          onSave={setRotation}
+        />
+      )}
     </main>
   );
 }

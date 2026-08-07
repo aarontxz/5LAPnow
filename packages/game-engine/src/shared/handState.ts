@@ -65,6 +65,9 @@ export interface HandState {
   /** Flat union of all boards; equals boards[0] for single-board games. */
   board: Card[];
   boards: Card[][];
+  /** Community cards that would have come next — null until rabbit hunting is triggered or N/A (all cards dealt). */
+  rabbitBoard: Card[] | null;
+  rabbitBoards: Card[][] | null;
   deck: Deck;
   players: Map<number, HandPlayerState>;
   /** Acting order for this hand (seat indices), starting left of the button. */

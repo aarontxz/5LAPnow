@@ -12,7 +12,6 @@ export interface CreateGuestSessionResponse {
 }
 
 export interface CreateTableRequest {
-  name: string;
   gameDefinitionId: string;
   smallBlind: number;
   bigBlind: number;
@@ -22,7 +21,7 @@ export interface CreateTableRequest {
 
 export interface TableSummary {
   id: string;
-  name: string;
+  name?: string;
   gameDefinitionId: string;
   gameName: string;
   smallBlind: number;

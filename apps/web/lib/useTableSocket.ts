@@ -44,7 +44,11 @@ export function useTableSocket(tableId: string) {
   const transferOwnership = (seatIndex: number) => socketRef.current?.emit("table:transferOwnership", { tableId, seatIndex });
   const stand = () => socketRef.current?.emit("seat:stand", { tableId });
   const startHand = () => socketRef.current?.emit("table:startHand", { tableId });
+  const setNextGame = (gameDefinitionId: string) => socketRef.current?.emit("table:setNextGame", { tableId, gameDefinitionId });
+  const setRotation = (rotation: Array<{ gameDefinitionId: string; count: number }>) =>
+    socketRef.current?.emit("table:setRotation", { tableId, rotation });
   const sendAction = (action: PlayerAction) => socketRef.current?.emit("hand:action", { tableId, action });
+  const revealRabbit = () => socketRef.current?.emit("hand:revealRabbit", { tableId });
 
   return {
     snapshot,
@@ -60,6 +64,9 @@ export function useTableSocket(tableId: string) {
     transferOwnership,
     stand,
     startHand,
+    setNextGame,
+    setRotation,
     sendAction,
+    revealRabbit,
   };
 }

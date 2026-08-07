@@ -70,7 +70,7 @@ enum TableStatus {
 
 model Table {
   id               String         @id @default(uuid())
-  name             String
+  name             String?
   gameDefinitionId String
   gameDefinition   GameDefinition @relation(fields: [gameDefinitionId], references: [id])
   /// The table owner approves seat requests and sets/edits approved buy-ins; defaults to whoever created the table.
@@ -83,6 +83,7 @@ model Table {
   maxSeats         Int            @default(10)
   status           TableStatus    @default(waiting)
   buttonSeatIndex  Int?
+  rotation         Json?
   createdAt        DateTime       @default(now())
   seats            Seat[]
   hands            Hand[]

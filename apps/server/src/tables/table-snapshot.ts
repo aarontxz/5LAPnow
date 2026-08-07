@@ -1,5 +1,16 @@
 import { GameDefinition, HandState, TableState, getLegalActions } from "@5lapnow/game-engine";
-import { HandPlayerView, HandView, PublicSeatView, SeatRequestView, TableSnapshot } from "@5lapnow/shared-types";
+import { HandPlayerView, HandView, PublicSeatView, RotationSlot, SeatRequestView, TableSnapshot } from "@5lapnow/shared-types";
+
+export interface RotationSlotRuntime {
+  gameDefinitionId: string;
+  gameName: string;
+  count: number;
+}
+
+export interface NextGameOverride {
+  gameDefinitionId: string;
+  gameName: string;
+}
 
 export interface SeatRequestState {
   id: string;
@@ -28,6 +39,10 @@ export interface RuntimeTable {
   pendingStackAdjustments: Map<number, PendingStackAdjustment>;
   /** Seats (by seatIndex) that asked to stand up mid-hand; auto-check/folded until the hand completes, then evicted. */
   standRequests: Set<number>;
+  rotation: RotationSlotRuntime[];
+  rotationCursor: { slotIndex: number; handInSlot: number };
+  /** One-hand game override set by the owner; cleared at the start of the next hand. */
+  nextGameOverride: NextGameOverride | null;
 }
 
 function totalPot(hand: HandState): number {
@@ -87,6 +102,8 @@ export function buildTableSnapshot(runtime: RuntimeTable, viewerUserId: string |
       phase: hand.phase,
       board: hand.board,
       boards: hand.boards.length > 1 ? hand.boards : null,
+      rabbitBoard: hand.rabbitBoard,
+      rabbitBoards: hand.rabbitBoards,
       pot: totalPot(hand),
       turnSeatIndex,
       players,
@@ -103,6 +120,18 @@ export function buildTableSnapshot(runtime: RuntimeTable, viewerUserId: string |
     requestedBuyIn: r.requestedBuyIn,
   }));
 
+  const nextGame: NextGameOverride =
+    runtime.nextGameOverride ??
+    (runtime.rotation[runtime.rotationCursor.slotIndex]
+      ? { gameDefinitionId: runtime.rotation[runtime.rotationCursor.slotIndex]!.gameDefinitionId, gameName: runtime.rotation[runtime.rotationCursor.slotIndex]!.gameName }
+      : { gameDefinitionId: gameDefinition.id, gameName: gameDefinition.name });
+
+  const rotation: RotationSlot[] = runtime.rotation.map((s) => ({
+    gameDefinitionId: s.gameDefinitionId,
+    gameName: s.gameName,
+    count: s.count,
+  }));
+
   return {
     tableId: runtime.tableId,
     gameDefinitionId: gameDefinition.id,
@@ -114,5 +143,8 @@ export function buildTableSnapshot(runtime: RuntimeTable, viewerUserId: string |
     buttonSeatIndex: table.buttonSeatIndex,
     handInProgress: hand !== null && hand.phase !== "complete",
     hand: handView,
+    rotation,
+    nextGameDefinitionId: nextGame.gameDefinitionId,
+    nextGameName: nextGame.gameName,
   };
 }

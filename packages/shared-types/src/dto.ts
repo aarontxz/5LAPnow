@@ -31,6 +31,9 @@ export interface HandView {
   board: Card[];
   /** Populated only for multi-board games; null for standard single-board games. */
   boards: Card[][] | null;
+  /** Undealt community cards shown after rabbit hunting; null until revealed or when all cards were already dealt. */
+  rabbitBoard: Card[] | null;
+  rabbitBoards: Card[][] | null;
   pot: number;
   turnSeatIndex: number | null;
   players: HandPlayerView[];
@@ -47,6 +50,12 @@ export interface SeatRequestView {
   requestedBuyIn: number;
 }
 
+export interface RotationSlot {
+  gameDefinitionId: string;
+  gameName: string;
+  count: number;
+}
+
 export interface TableSnapshot {
   tableId: string;
   gameDefinitionId: string;
@@ -60,4 +69,9 @@ export interface TableSnapshot {
   buttonSeatIndex: number | null;
   handInProgress: boolean;
   hand: HandView | null;
+  /** Owner-defined game rotation; empty array means no rotation (same game every hand). */
+  rotation: RotationSlot[];
+  /** Which game will be used for the next hand (from rotation or a one-hand override). */
+  nextGameDefinitionId: string;
+  nextGameName: string;
 }

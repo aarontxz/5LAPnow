@@ -56,7 +56,13 @@ export interface ClientToServerEvents {
   /** Owner-only: hands table ownership to the player in this seat. */
   "table:transferOwnership": (payload: SeatIndexPayload) => void;
   "table:startHand": (payload: { tableId: string }) => void;
+  /** Owner-only: sets a one-hand game override (cleared after the next hand starts). */
+  "table:setNextGame": (payload: { tableId: string; gameDefinitionId: string }) => void;
+  /** Owner-only: defines the repeating game rotation for this table. */
+  "table:setRotation": (payload: { tableId: string; rotation: Array<{ gameDefinitionId: string; count: number }> }) => void;
   "hand:action": (payload: HandActionRequest) => void;
+  /** Any seated player can request to see the undealt community cards after a hand ends early. */
+  "hand:revealRabbit": (payload: { tableId: string }) => void;
 }
 
 export interface ServerToClientEvents {

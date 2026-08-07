@@ -12,7 +12,7 @@ export const MAX_SEATS = 10;
 
 export interface TableConfig {
   id: string;
-  name: string;
+  name?: string;
   gameDefinitionId: string;
   smallBlind: number;
   bigBlind: number;

@@ -10,10 +10,11 @@ import {
   standPlayer,
   TableConfig,
 } from "@5lapnow/game-engine";
+import type { Card } from "@5lapnow/cards";
 import type { CreateTableRequest, HandLogEntry, PlayerLedgerEntry, TableLedgerResponse, TableSummary } from "@5lapnow/shared-types";
 import { PrismaService } from "../prisma/prisma.service";
 import { GamesService } from "../games/games.service";
-import { RuntimeTable, buildTableSnapshot } from "./table-snapshot";
+import { RuntimeTable, buildTableSnapshot, RotationSlotRuntime, NextGameOverride } from "./table-snapshot";
 
 type TableChangeListener = (tableId: string) => void;
 
@@ -52,7 +53,6 @@ export class TablesService implements OnModuleInit {
 
       const config: TableConfig = {
         id: row.id,
-        name: row.name,
         gameDefinitionId: row.gameDefinitionId,
         smallBlind: row.smallBlind,
         bigBlind: row.bigBlind,
@@ -71,6 +71,16 @@ export class TablesService implements OnModuleInit {
         seat.status = seatRow.status === "sitting_out" ? "sitting-out" : seatRow.status;
       }
 
+      // Restore rotation from DB; resolve gameName for each slot.
+      const rotationJson = (row.rotation ?? []) as Array<{ gameDefinitionId: string; count: number }>;
+      const rotation: RotationSlotRuntime[] = [];
+      for (const slot of rotationJson) {
+        try {
+          const def = await this.gamesService.getDefinition(slot.gameDefinitionId);
+          rotation.push({ gameDefinitionId: slot.gameDefinitionId, gameName: def.name, count: slot.count });
+        } catch { /* game gone — drop from rotation */ }
+      }
+
       this.runtimeTables.set(row.id, {
         tableId: row.id,
         ownerId: row.ownerId,
@@ -82,6 +92,9 @@ export class TablesService implements OnModuleInit {
         pendingRequests: [],
         pendingStackAdjustments: new Map(),
         standRequests: new Set(),
+        rotation,
+        rotationCursor: { slotIndex: 0, handInSlot: 0 },
+        nextGameOverride: null,
       });
     }
   }
@@ -99,7 +112,6 @@ export class TablesService implements OnModuleInit {
 
     const row = await this.prisma.table.create({
       data: {
-        name: dto.name,
         gameDefinitionId: gameDefinition.id,
         ownerId,
         smallBlind: dto.smallBlind,
@@ -111,7 +123,6 @@ export class TablesService implements OnModuleInit {
 
     const config: TableConfig = {
       id: row.id,
-      name: row.name,
       gameDefinitionId: gameDefinition.id,
       smallBlind: dto.smallBlind,
       bigBlind: dto.bigBlind,
@@ -130,6 +141,9 @@ export class TablesService implements OnModuleInit {
       pendingRequests: [],
       pendingStackAdjustments: new Map(),
       standRequests: new Set(),
+      rotation: [],
+      rotationCursor: { slotIndex: 0, handInSlot: 0 },
+      nextGameOverride: null,
     });
 
     return this.toSummary(row.id);
@@ -143,7 +157,6 @@ export class TablesService implements OnModuleInit {
     const runtime = this.getRuntimeTable(tableId);
     return {
       id: row.id,
-      name: row.name,
       gameDefinitionId: row.gameDefinitionId,
       gameName: row.gameDefinition.name,
       smallBlind: row.smallBlind,
@@ -415,11 +428,95 @@ export class TablesService implements OnModuleInit {
     }
     runtime.pendingStackAdjustments.clear();
 
-    const engine = new DeclarativeEngine(runtime.gameDefinition);
+    // Resolve the game for this hand: one-off override > rotation > current game.
+    let gameDefinition = runtime.gameDefinition;
+    if (runtime.nextGameOverride) {
+      gameDefinition = await this.gamesService.getDefinition(runtime.nextGameOverride.gameDefinitionId);
+      runtime.nextGameOverride = null;
+    } else if (runtime.rotation.length > 0) {
+      const slot = runtime.rotation[runtime.rotationCursor.slotIndex];
+      if (slot) {
+        gameDefinition = await this.gamesService.getDefinition(slot.gameDefinitionId);
+        runtime.rotationCursor.handInSlot += 1;
+        if (runtime.rotationCursor.handInSlot >= slot.count) {
+          runtime.rotationCursor.slotIndex = (runtime.rotationCursor.slotIndex + 1) % runtime.rotation.length;
+          runtime.rotationCursor.handInSlot = 0;
+        }
+      }
+    }
+    if (gameDefinition.id !== runtime.gameDefinition.id) {
+      runtime.gameDefinition = gameDefinition;
+      await this.prisma.table.update({ where: { id: tableId }, data: { gameDefinitionId: gameDefinition.id } });
+    }
+
+    const engine = new DeclarativeEngine(gameDefinition);
     runtime.handCounter += 1;
     runtime.hand = engine.initHand(runtime.table, runtime.handCounter);
 
     await this.advanceHand(tableId, runtime);
+    this.emitChanged(tableId);
+  }
+
+  async setNextGame(tableId: string, requesterUserId: string, gameDefinitionId: string): Promise<void> {
+    const runtime = this.getRuntimeTable(tableId);
+    if (requesterUserId !== runtime.ownerId) throw new ForbiddenException("Only the table owner can set the next game");
+    const def = await this.gamesService.getDefinition(gameDefinitionId);
+    runtime.nextGameOverride = { gameDefinitionId: def.id, gameName: def.name };
+    this.emitChanged(tableId);
+  }
+
+  async setRotation(
+    tableId: string,
+    requesterUserId: string,
+    slots: Array<{ gameDefinitionId: string; count: number }>
+  ): Promise<void> {
+    const runtime = this.getRuntimeTable(tableId);
+    if (requesterUserId !== runtime.ownerId) throw new ForbiddenException("Only the table owner can set the rotation");
+    const rotation: RotationSlotRuntime[] = [];
+    for (const slot of slots) {
+      if (slot.count < 1) throw new BadRequestException("Each rotation slot must have count >= 1");
+      const def = await this.gamesService.getDefinition(slot.gameDefinitionId);
+      rotation.push({ gameDefinitionId: def.id, gameName: def.name, count: slot.count });
+    }
+    runtime.rotation = rotation;
+    runtime.rotationCursor = { slotIndex: 0, handInSlot: 0 };
+    runtime.nextGameOverride = null;
+    await this.prisma.table.update({ where: { id: tableId }, data: { rotation: JSON.parse(JSON.stringify(slots)) } });
+    this.emitChanged(tableId);
+  }
+
+  async revealRabbit(tableId: string, requesterUserId: string): Promise<void> {
+    const runtime = this.getRuntimeTable(tableId);
+    const hand = runtime.hand;
+    if (!hand || hand.phase !== "complete") throw new BadRequestException("No completed hand to rabbit hunt");
+    if (hand.rabbitBoard !== null) return; // already revealed
+    if (!runtime.table.seats.some((s) => s.playerId === requesterUserId)) {
+      throw new ForbiddenException("Only seated players can reveal rabbit cards");
+    }
+
+    const remainingStreets = hand.gameDefinition.streets
+      .slice(hand.streetIndex + 1)
+      .filter((s) => s.dealCommunityCards > 0);
+    if (remainingStreets.length === 0) return; // all community cards were already dealt
+
+    const numBoards = hand.boards.length;
+    if (numBoards > 1) {
+      const rabbitBoards: Card[][] = hand.boards.map(() => []);
+      for (const street of remainingStreets) {
+        hand.deck.burn();
+        for (const board of rabbitBoards) board.push(...hand.deck.draw(street.dealCommunityCards));
+      }
+      hand.rabbitBoards = rabbitBoards;
+      hand.rabbitBoard = rabbitBoards.flat();
+    } else {
+      const rabbitBoard: Card[] = [];
+      for (const street of remainingStreets) {
+        hand.deck.burn();
+        rabbitBoard.push(...hand.deck.draw(street.dealCommunityCards));
+      }
+      hand.rabbitBoard = rabbitBoard;
+      hand.rabbitBoards = null;
+    }
     this.emitChanged(tableId);
   }
 

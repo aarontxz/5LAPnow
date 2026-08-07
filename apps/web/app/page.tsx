@@ -47,7 +47,6 @@ export default function LobbyPage() {
   const [session, setSession] = useState<Session | null>(null);
   const [games, setGames] = useState<GameOption[]>([]);
   const [selectedGameId, setSelectedGameId] = useState<string>("");
-  const [tableName, setTableName] = useState("My Table");
   const [error, setError] = useState<string | null>(null);
 
   const [genPrompt, setGenPrompt] = useState("");
@@ -112,7 +111,6 @@ export default function LobbyPage() {
     }
     try {
       const table = await api.createTable({
-        name: tableName || game.name,
         gameDefinitionId: game.id,
         smallBlind: 1,
         bigBlind: 2,
@@ -136,14 +134,6 @@ export default function LobbyPage() {
       <section className="rounded-2xl border border-white/10 bg-white/5 p-4 sm:p-6">
         <h2 className="mb-4 text-lg font-medium">Create a table</h2>
         <div className="flex flex-col gap-4 sm:flex-row sm:items-end">
-          <div className="flex-1">
-            <label className="mb-1 block text-xs text-white/50">Table name</label>
-            <input
-              value={tableName}
-              onChange={(e) => setTableName(e.target.value)}
-              className="w-full rounded-lg border border-white/20 bg-black/40 px-3 py-2.5 text-base text-white"
-            />
-          </div>
           <div className="flex-1">
             <label className="mb-1 block text-xs text-white/50">Game</label>
             <select

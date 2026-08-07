@@ -177,6 +177,24 @@ export class TablesGateway implements OnGatewayInit, OnModuleInit {
     await this.guard(socket, () => this.tablesService.startHand(payload.tableId, socket.data.userId));
   }
 
+  @SubscribeMessage("table:setNextGame")
+  async onSetNextGame(@ConnectedSocket() socket: AppSocket, @MessageBody() payload: { tableId: string; gameDefinitionId: string }): Promise<void> {
+    await this.guard(socket, () => this.tablesService.setNextGame(payload.tableId, socket.data.userId, payload.gameDefinitionId));
+  }
+
+  @SubscribeMessage("table:setRotation")
+  async onSetRotation(
+    @ConnectedSocket() socket: AppSocket,
+    @MessageBody() payload: { tableId: string; rotation: Array<{ gameDefinitionId: string; count: number }> }
+  ): Promise<void> {
+    await this.guard(socket, () => this.tablesService.setRotation(payload.tableId, socket.data.userId, payload.rotation));
+  }
+
+  @SubscribeMessage("hand:revealRabbit")
+  async onRevealRabbit(@ConnectedSocket() socket: AppSocket, @MessageBody() payload: { tableId: string }): Promise<void> {
+    await this.guard(socket, () => this.tablesService.revealRabbit(payload.tableId, socket.data.userId));
+  }
+
   @SubscribeMessage("hand:action")
   async onHandAction(@ConnectedSocket() socket: AppSocket, @MessageBody() payload: HandActionRequest): Promise<void> {
     await this.guard(socket, async () => {
