@@ -110,6 +110,21 @@ export default function TablePage({ params }: { params: Promise<{ id: string }> 
     setDisplayPot(hand.pot);
   }, [hand?.phase, hand?.pot, hand?.handNumber]);
 
+  // 's' hotkey lets the owner start a hand without reaching for the button.
+  useEffect(() => {
+    const isOwnerNow = snapshot?.ownerId === session?.userId;
+    const activeSeatCount = snapshot?.seats.filter((s) => s.status === "active").length ?? 0;
+    function handleKeyDown(e: KeyboardEvent) {
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+      const target = e.target as HTMLElement | null;
+      if (target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA")) return;
+      if (e.key.toLowerCase() !== "s") return;
+      if (isOwnerNow && !snapshot?.handInProgress && activeSeatCount >= 2) startHand();
+    }
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [session?.userId, snapshot, startHand]);
+
   if (!session) return null;
 
   const mySeat = snapshot?.seats.find((s) => s.playerId === session.userId);
@@ -121,19 +136,6 @@ export default function TablePage({ params }: { params: Promise<{ id: string }> 
   const rabbitBoards = hand?.rabbitBoards ?? null;
   const legalActions = hand?.legalActions ?? null;
   const activeSeats = snapshot?.seats.filter((s) => s.status === "active").length ?? 0;
-
-  // 's' hotkey lets the owner start a hand without reaching for the button.
-  useEffect(() => {
-    function handleKeyDown(e: KeyboardEvent) {
-      if (e.metaKey || e.ctrlKey || e.altKey) return;
-      const target = e.target as HTMLElement | null;
-      if (target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA")) return;
-      if (e.key.toLowerCase() !== "s") return;
-      if (isOwner && !snapshot?.handInProgress && activeSeats >= 2) startHand();
-    }
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [isOwner, snapshot?.handInProgress, activeSeats, startHand]);
 
   return (
     <main className="relative flex flex-1 flex-col overflow-hidden px-2 py-3 sm:px-6 sm:py-6">
