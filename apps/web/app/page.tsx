@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import type { GameDefinition } from "@5lapnow/game-engine";
 import { validateGameGenerationPrompt, type GameGenerationRequestView } from "@5lapnow/shared-types";
 import { api } from "@/lib/api";
-import { loadSession, saveSession, type Session } from "@/lib/session";
+import { saveSession, type Session } from "@/lib/session";
 import { HoverBorderGradient } from "@/components/aceternity/hover-border-gradient";
 
 function extractErrorMessage(err: unknown): string {
@@ -56,18 +56,18 @@ export default function LobbyPage() {
   const [genSubmitting, setGenSubmitting] = useState(false);
   const [genRequests, setGenRequests] = useState<GameGenerationRequestView[]>([]);
 
-  // The lobby IS the landing page now — no separate name-entry gate. A
-  // guest session is silently provisioned (with no name yet) on first visit;
-  // a display name is only ever collected later, when requesting a seat.
+  // Always verify the cookie is alive; create a new session if it isn't.
   useEffect(() => {
-    const existing = loadSession();
-    if (existing) {
-      setSession(existing);
-      return;
-    }
-    void api.createGuestSession({}).then((s) => {
-      saveSession(s);
-      setSession(s);
+    void api.me().then((me) => {
+      if (me) {
+        saveSession(me);
+        setSession(me);
+      } else {
+        void api.createGuestSession({}).then((s) => {
+          saveSession(s);
+          setSession(s);
+        });
+      }
     });
   }, []);
 
