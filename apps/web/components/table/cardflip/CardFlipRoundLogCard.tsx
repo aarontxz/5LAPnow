@@ -57,7 +57,7 @@ export function CardFlipRoundLogCard({
         <span className="text-xs text-neutral-400">{new Date(r.playedAt).toLocaleTimeString()}</span>
       </div>
       <div className="mt-1 text-xs text-neutral-500">
-        stake {r.stake} · first to {r.cardsPerPlayer} cards
+        stake {r.stake} · beat the leader (max {r.cardsPerPlayer} cards)
       </div>
       <div className="mt-2 flex flex-col gap-0.5 text-xs text-neutral-500">
         {netEntries.map(({ player, net }) => (
