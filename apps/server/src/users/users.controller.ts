@@ -20,9 +20,11 @@ export class UsersController {
     const existingUserId = req.cookies?.[GUEST_COOKIE_NAME];
     const user = await this.usersService.getOrCreateGuest(existingUserId, displayName);
 
+    const isProd = process.env.NODE_ENV === "production";
     res.cookie(GUEST_COOKIE_NAME, user.id, {
       httpOnly: true,
-      sameSite: "lax",
+      sameSite: isProd ? "none" : "lax",
+      secure: isProd,
       maxAge: 1000 * 60 * 60 * 24 * 30,
     });
 
