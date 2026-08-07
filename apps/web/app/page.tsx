@@ -7,6 +7,7 @@ import { validateGameGenerationPrompt, type GameGenerationRequestView } from "@5
 import { api } from "@/lib/api";
 import { saveSession, type Session } from "@/lib/session";
 import { HoverBorderGradient } from "@/components/aceternity/hover-border-gradient";
+import { GameSelect } from "@/components/table/GameSelect";
 
 function extractErrorMessage(err: unknown): string {
   const raw = (err as Error).message ?? "";
@@ -136,17 +137,11 @@ export default function LobbyPage() {
         <div className="flex flex-col gap-4 sm:flex-row sm:items-end">
           <div className="flex-1">
             <label className="mb-1 block text-xs text-white/50">Game</label>
-            <select
+            <GameSelect
+              games={games}
               value={selectedGameId}
-              onChange={(e) => setSelectedGameId(e.target.value)}
-              className="w-full rounded-lg border border-white/20 bg-black/40 px-3 py-2.5 text-base text-white"
-            >
-              {games.map((g) => (
-                <option key={g.id} value={g.id}>
-                  {g.name}
-                </option>
-              ))}
-            </select>
+              onChange={setSelectedGameId}
+            />
           </div>
           <HoverBorderGradient onClick={createTable} className="w-full sm:w-auto" containerClassName="w-full sm:w-auto">
             Create table

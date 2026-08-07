@@ -45,8 +45,6 @@ export function useTableSocket(tableId: string) {
   const stand = () => socketRef.current?.emit("seat:stand", { tableId });
   const startHand = () => socketRef.current?.emit("table:startHand", { tableId });
   const setNextGame = (gameDefinitionId: string) => socketRef.current?.emit("table:setNextGame", { tableId, gameDefinitionId });
-  const setRotation = (rotation: Array<{ gameDefinitionId: string; count: number }>) =>
-    socketRef.current?.emit("table:setRotation", { tableId, rotation });
   const sendAction = (action: PlayerAction) => socketRef.current?.emit("hand:action", { tableId, action });
   const revealRabbit = () => socketRef.current?.emit("hand:revealRabbit", { tableId });
 
@@ -65,7 +63,6 @@ export function useTableSocket(tableId: string) {
     stand,
     startHand,
     setNextGame,
-    setRotation,
     sendAction,
     revealRabbit,
   };

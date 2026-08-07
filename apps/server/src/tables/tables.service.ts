@@ -14,7 +14,7 @@ import type { Card } from "@5lapnow/cards";
 import type { CreateTableRequest, HandLogEntry, PlayerLedgerEntry, TableLedgerResponse, TableSummary } from "@5lapnow/shared-types";
 import { PrismaService } from "../prisma/prisma.service";
 import { GamesService } from "../games/games.service";
-import { RuntimeTable, buildTableSnapshot, RotationSlotRuntime, NextGameOverride } from "./table-snapshot";
+import { RuntimeTable, buildTableSnapshot, NextGameOverride } from "./table-snapshot";
 
 type TableChangeListener = (tableId: string) => void;
 
@@ -71,16 +71,6 @@ export class TablesService implements OnModuleInit {
         seat.status = seatRow.status === "sitting_out" ? "sitting-out" : seatRow.status;
       }
 
-      // Restore rotation from DB; resolve gameName for each slot.
-      const rotationJson = (row.rotation ?? []) as Array<{ gameDefinitionId: string; count: number }>;
-      const rotation: RotationSlotRuntime[] = [];
-      for (const slot of rotationJson) {
-        try {
-          const def = await this.gamesService.getDefinition(slot.gameDefinitionId);
-          rotation.push({ gameDefinitionId: slot.gameDefinitionId, gameName: def.name, count: slot.count });
-        } catch { /* game gone — drop from rotation */ }
-      }
-
       this.runtimeTables.set(row.id, {
         tableId: row.id,
         ownerId: row.ownerId,
@@ -92,8 +82,6 @@ export class TablesService implements OnModuleInit {
         pendingRequests: [],
         pendingStackAdjustments: new Map(),
         standRequests: new Set(),
-        rotation,
-        rotationCursor: { slotIndex: 0, handInSlot: 0 },
         nextGameOverride: null,
       });
     }
@@ -141,8 +129,6 @@ export class TablesService implements OnModuleInit {
       pendingRequests: [],
       pendingStackAdjustments: new Map(),
       standRequests: new Set(),
-      rotation: [],
-      rotationCursor: { slotIndex: 0, handInSlot: 0 },
       nextGameOverride: null,
     });
 
@@ -428,21 +414,11 @@ export class TablesService implements OnModuleInit {
     }
     runtime.pendingStackAdjustments.clear();
 
-    // Resolve the game for this hand: one-off override > rotation > current game.
+    // Resolve the game for this hand: one-off override falls back to current game.
     let gameDefinition = runtime.gameDefinition;
     if (runtime.nextGameOverride) {
       gameDefinition = await this.gamesService.getDefinition(runtime.nextGameOverride.gameDefinitionId);
       runtime.nextGameOverride = null;
-    } else if (runtime.rotation.length > 0) {
-      const slot = runtime.rotation[runtime.rotationCursor.slotIndex];
-      if (slot) {
-        gameDefinition = await this.gamesService.getDefinition(slot.gameDefinitionId);
-        runtime.rotationCursor.handInSlot += 1;
-        if (runtime.rotationCursor.handInSlot >= slot.count) {
-          runtime.rotationCursor.slotIndex = (runtime.rotationCursor.slotIndex + 1) % runtime.rotation.length;
-          runtime.rotationCursor.handInSlot = 0;
-        }
-      }
     }
     if (gameDefinition.id !== runtime.gameDefinition.id) {
       runtime.gameDefinition = gameDefinition;
@@ -462,26 +438,6 @@ export class TablesService implements OnModuleInit {
     if (requesterUserId !== runtime.ownerId) throw new ForbiddenException("Only the table owner can set the next game");
     const def = await this.gamesService.getDefinition(gameDefinitionId);
     runtime.nextGameOverride = { gameDefinitionId: def.id, gameName: def.name };
-    this.emitChanged(tableId);
-  }
-
-  async setRotation(
-    tableId: string,
-    requesterUserId: string,
-    slots: Array<{ gameDefinitionId: string; count: number }>
-  ): Promise<void> {
-    const runtime = this.getRuntimeTable(tableId);
-    if (requesterUserId !== runtime.ownerId) throw new ForbiddenException("Only the table owner can set the rotation");
-    const rotation: RotationSlotRuntime[] = [];
-    for (const slot of slots) {
-      if (slot.count < 1) throw new BadRequestException("Each rotation slot must have count >= 1");
-      const def = await this.gamesService.getDefinition(slot.gameDefinitionId);
-      rotation.push({ gameDefinitionId: def.id, gameName: def.name, count: slot.count });
-    }
-    runtime.rotation = rotation;
-    runtime.rotationCursor = { slotIndex: 0, handInSlot: 0 };
-    runtime.nextGameOverride = null;
-    await this.prisma.table.update({ where: { id: tableId }, data: { rotation: JSON.parse(JSON.stringify(slots)) } });
     this.emitChanged(tableId);
   }
 

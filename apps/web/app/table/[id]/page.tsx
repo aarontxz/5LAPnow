@@ -13,6 +13,7 @@ import { ActionControls } from "@/components/table/ActionControls";
 import { AnimatedNumber } from "@/components/table/AnimatedNumber";
 import { LedgerModal } from "@/components/table/LedgerModal";
 import { RotationEditor } from "@/components/table/RotationEditor";
+import { NextGamePicker } from "@/components/table/NextGamePicker";
 
 const MAX_SEATS = 10;
 
@@ -64,9 +65,7 @@ export default function TablePage({ params }: { params: Promise<{ id: string }> 
   const router = useRouter();
   const [session, setSession] = useState<Session | null>(null);
   const [ledgerOpen, setLedgerOpen] = useState(false);
-  const [rotationOpen, setRotationOpen] = useState(false);
-  const [games, setGames] = useState<Array<{ id: string; name: string }>>([]);
-  const [nextGamePickerOpen, setNextGamePickerOpen] = useState(false);
+  const [games, setGames] = useState<Array<{ id: string; name: string; description: string }>>([]);
   const {
     snapshot,
     error,
@@ -82,7 +81,6 @@ export default function TablePage({ params }: { params: Promise<{ id: string }> 
     stand,
     startHand,
     setNextGame,
-    setRotation,
     sendAction,
     revealRabbit,
   } = useTableSocket(tableId);
@@ -95,7 +93,7 @@ export default function TablePage({ params }: { params: Promise<{ id: string }> 
     }
     setSession(s);
     // Load all games so the owner can pick next game / edit rotation.
-    void api.listGames(s.userId).then((g) => setGames(g.map((x) => ({ id: x.id, name: x.name }))));
+    void api.listGames(s.userId).then((g) => setGames(g.map((x) => ({ id: x.id, name: x.name, description: x.description }))));
   }, [router]);
 
   const hand = snapshot?.hand ?? null;
@@ -318,40 +316,11 @@ export default function TablePage({ params }: { params: Promise<{ id: string }> 
               className="flex flex-col items-end gap-1"
             >
               {/* Next game label + picker */}
-              <div className="flex items-center gap-1.5 text-xs text-white/50">
-                <span>Next: <span className="text-white/80">{snapshot?.nextGameName}</span></span>
-                {games.length > 1 && (
-                  <button
-                    onClick={() => setNextGamePickerOpen((o) => !o)}
-                    className="rounded px-1 py-0.5 text-[10px] text-white/40 hover:text-white/70"
-                  >
-                    change
-                  </button>
-                )}
-                {isOwner && (
-                  <button
-                    onClick={() => setRotationOpen(true)}
-                    className="rounded px-1 py-0.5 text-[10px] text-white/40 hover:text-white/70"
-                  >
-                    rotation ↗
-                  </button>
-                )}
-              </div>
-
-              {/* One-hand game override picker */}
-              {nextGamePickerOpen && (
-                <div className="flex flex-col overflow-hidden rounded-xl border border-white/10 bg-black/80 shadow-xl">
-                  {games.map((g) => (
-                    <button
-                      key={g.id}
-                      onClick={() => { setNextGame(g.id); setNextGamePickerOpen(false); }}
-                      className={`px-4 py-2 text-left text-sm hover:bg-white/10 ${g.id === snapshot?.nextGameDefinitionId ? "text-emerald-400" : "text-white"}`}
-                    >
-                      {g.name}
-                    </button>
-                  ))}
-                </div>
-              )}
+              <NextGamePicker
+                games={games}
+                activeGameDefinitionId={snapshot?.nextGameDefinitionId}
+                onSelect={setNextGame}
+              />
 
               <motion.button
                 whileHover={{ scale: 1.04 }}
@@ -391,15 +360,6 @@ export default function TablePage({ params }: { params: Promise<{ id: string }> 
       </div>
 
       <LedgerModal tableId={tableId} open={ledgerOpen} onClose={() => setLedgerOpen(false)} />
-      {isOwner && (
-        <RotationEditor
-          open={rotationOpen}
-          onClose={() => setRotationOpen(false)}
-          currentRotation={snapshot?.rotation ?? []}
-          games={games}
-          onSave={setRotation}
-        />
-      )}
     </main>
   );
 }

@@ -50,11 +50,6 @@ export interface SeatRequestView {
   requestedBuyIn: number;
 }
 
-export interface RotationSlot {
-  gameDefinitionId: string;
-  gameName: string;
-  count: number;
-}
 
 export interface TableSnapshot {
   tableId: string;
@@ -69,9 +64,7 @@ export interface TableSnapshot {
   buttonSeatIndex: number | null;
   handInProgress: boolean;
   hand: HandView | null;
-  /** Owner-defined game rotation; empty array means no rotation (same game every hand). */
-  rotation: RotationSlot[];
-  /** Which game will be used for the next hand (from rotation or a one-hand override). */
+  /** Which game will be used for the next hand (owner-set override, or current game as default). */
   nextGameDefinitionId: string;
   nextGameName: string;
 }

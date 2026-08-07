@@ -1,11 +1,5 @@
 import { GameDefinition, HandState, TableState, getLegalActions } from "@5lapnow/game-engine";
-import { HandPlayerView, HandView, PublicSeatView, RotationSlot, SeatRequestView, TableSnapshot } from "@5lapnow/shared-types";
-
-export interface RotationSlotRuntime {
-  gameDefinitionId: string;
-  gameName: string;
-  count: number;
-}
+import { HandPlayerView, HandView, PublicSeatView, SeatRequestView, TableSnapshot } from "@5lapnow/shared-types";
 
 export interface NextGameOverride {
   gameDefinitionId: string;
@@ -39,8 +33,6 @@ export interface RuntimeTable {
   pendingStackAdjustments: Map<number, PendingStackAdjustment>;
   /** Seats (by seatIndex) that asked to stand up mid-hand; auto-check/folded until the hand completes, then evicted. */
   standRequests: Set<number>;
-  rotation: RotationSlotRuntime[];
-  rotationCursor: { slotIndex: number; handInSlot: number };
   /** One-hand game override set by the owner; cleared at the start of the next hand. */
   nextGameOverride: NextGameOverride | null;
 }
@@ -122,15 +114,7 @@ export function buildTableSnapshot(runtime: RuntimeTable, viewerUserId: string |
 
   const nextGame: NextGameOverride =
     runtime.nextGameOverride ??
-    (runtime.rotation[runtime.rotationCursor.slotIndex]
-      ? { gameDefinitionId: runtime.rotation[runtime.rotationCursor.slotIndex]!.gameDefinitionId, gameName: runtime.rotation[runtime.rotationCursor.slotIndex]!.gameName }
-      : { gameDefinitionId: gameDefinition.id, gameName: gameDefinition.name });
-
-  const rotation: RotationSlot[] = runtime.rotation.map((s) => ({
-    gameDefinitionId: s.gameDefinitionId,
-    gameName: s.gameName,
-    count: s.count,
-  }));
+    { gameDefinitionId: gameDefinition.id, gameName: gameDefinition.name };
 
   return {
     tableId: runtime.tableId,
@@ -143,7 +127,6 @@ export function buildTableSnapshot(runtime: RuntimeTable, viewerUserId: string |
     buttonSeatIndex: table.buttonSeatIndex,
     handInProgress: hand !== null && hand.phase !== "complete",
     hand: handView,
-    rotation,
     nextGameDefinitionId: nextGame.gameDefinitionId,
     nextGameName: nextGame.gameName,
   };
