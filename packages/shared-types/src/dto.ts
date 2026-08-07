@@ -29,6 +29,8 @@ export interface HandView {
   streetName: string;
   phase: HandPhase;
   board: Card[];
+  /** Populated only for multi-board games; null for standard single-board games. */
+  boards: Card[][] | null;
   pot: number;
   turnSeatIndex: number | null;
   players: HandPlayerView[];

@@ -90,6 +90,21 @@ export function settleShowdown(table: TableState, hand: HandState): ShowdownResu
         pot.hiWinners = withDescription(splitAmountEvenly(hiHalf, hiWinnerSeats, pot.eligibleSeats), hiDescription);
         pot.loWinners = withDescription(splitAmountEvenly(potHalf, loWinnerSeats, pot.eligibleSeats), loDescription);
       }
+    } else if (hand.boards.length > 1) {
+      // Split pot equally across boards; each board share goes to that board's best hand.
+      const numBoards = hand.boards.length;
+      const baseShare = Math.floor(pot.amount / numBoards);
+      for (let bi = 0; bi < numBoards; bi++) {
+        const share = bi === 0 ? pot.amount - baseShare * (numBoards - 1) : baseShare;
+        const boardCards = hand.boards[bi] ?? [];
+        const evalCards = (s: number): Card[] => [...(hand.players.get(s)?.holeCards ?? []), ...boardCards];
+        const evals = pot.eligibleSeats.map((s) => ({ seatIndex: s, hand: evaluateBestHand(evalCards(s), mode) }));
+        const best = evals.reduce((a, b) => (compareEvaluatedHands(b.hand, a.hand, mode) > 0 ? b : a));
+        const winnerSeats = evals.filter((e) => compareEvaluatedHands(e.hand, best.hand, mode) === 0).map((e) => e.seatIndex);
+        pot.hiWinners.push(
+          ...withDescription(splitAmountEvenly(share, winnerSeats, pot.eligibleSeats), describeEvaluatedHand(best.hand, mode))
+        );
+      }
     } else {
       const evals = pot.eligibleSeats.map((s) => ({ seatIndex: s, hand: evaluateBestHand(cardsFor(s), mode) }));
       const best = evals.reduce((best, cur) => (compareEvaluatedHands(cur.hand, best.hand, mode) > 0 ? cur : best));

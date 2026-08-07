@@ -1,4 +1,4 @@
-import { Deck } from "@5lapnow/cards";
+import { Card, Deck } from "@5lapnow/cards";
 import { GameDefinition } from "./gameDefinition.js";
 import { activeSeats, nextButtonSeatIndex, TableState } from "./table.js";
 import {
@@ -54,12 +54,15 @@ export class DeclarativeEngine {
       });
     }
 
+    const boards: Card[][] = Array.from({ length: this.gameDefinition.boards }, () => [] as Card[]);
+
     const hand: HandState = {
       gameDefinition: this.gameDefinition,
       handNumber,
       buttonSeatIndex,
       streetIndex: -1,
-      board: [],
+      board: boards[0]!,
+      boards,
       deck,
       players,
       seatOrder,
@@ -117,7 +120,12 @@ export class DeclarativeEngine {
     }
     if (street.dealCommunityCards > 0) {
       hand.deck.burn();
-      hand.board.push(...hand.deck.draw(street.dealCommunityCards));
+      if (hand.boards.length > 1) {
+        for (const b of hand.boards) b.push(...hand.deck.draw(street.dealCommunityCards));
+        hand.board = hand.boards.flat();
+      } else {
+        hand.board.push(...hand.deck.draw(street.dealCommunityCards));
+      }
     }
 
     const remaining = activeHandPlayers(hand);

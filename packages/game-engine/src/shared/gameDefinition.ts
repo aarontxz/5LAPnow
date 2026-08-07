@@ -51,6 +51,8 @@ export const GameDefinitionSchema = z.object({
   bettingStructure: z.enum(["no-limit", "pot-limit", "fixed-limit"]),
   forcedBets: ForcedBetsSchema,
   handRanking: HandRankingSchema,
+  /** Number of simultaneous community boards; pot is split equally among board winners. */
+  boards: z.number().int().min(1).max(4).default(1),
 });
 export type GameDefinition = z.infer<typeof GameDefinitionSchema>;
 

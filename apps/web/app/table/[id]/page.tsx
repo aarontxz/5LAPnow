@@ -117,6 +117,7 @@ export default function TablePage({ params }: { params: Promise<{ id: string }> 
   const mySeatIndex = mySeat?.seatIndex ?? null;
   const isOwner = snapshot?.ownerId === session.userId;
   const board = hand?.board ?? [];
+  const boards = hand?.boards ?? null;
   const legalActions = hand?.legalActions ?? null;
   const activeSeats = snapshot?.seats.filter((s) => s.status === "active").length ?? 0;
 
@@ -160,14 +161,29 @@ export default function TablePage({ params }: { params: Promise<{ id: string }> 
       <div className="flex flex-1 items-center justify-center overflow-hidden py-2">
         <div className="relative aspect-[5/6] w-full max-w-md rounded-2xl border border-emerald-900/50 bg-gradient-to-b from-emerald-950 to-emerald-900 shadow-2xl sm:max-w-2xl">
           <div className="absolute left-1/2 top-1/2 flex -translate-x-1/2 -translate-y-1/2 flex-col items-center gap-1 sm:gap-2">
-            <div className="flex gap-0.5 sm:gap-1" style={{ perspective: 800 }}>
-              {board.map((c, i) => (
-                <PlayingCard key={i} card={c} dealDelay={i * 0.12} />
-              ))}
-              {Array.from({ length: 5 - board.length }).map((_, i) => (
-                <div key={`ph-${i}`} className="h-16 w-11 rounded-md border border-dashed border-white/10 sm:h-24 sm:w-16" />
-              ))}
-            </div>
+            {boards ? (
+              <div className="flex flex-col gap-1">
+                {boards.map((b, bi) => (
+                  <div key={bi} className="flex gap-0.5 sm:gap-1" style={{ perspective: 800 }}>
+                    {b.map((c, i) => (
+                      <PlayingCard key={i} card={c} dealDelay={i * 0.12} />
+                    ))}
+                    {Array.from({ length: 5 - b.length }).map((_, i) => (
+                      <div key={`ph-${i}`} className="h-16 w-11 rounded-md border border-dashed border-white/10 sm:h-24 sm:w-16" />
+                    ))}
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="flex gap-0.5 sm:gap-1" style={{ perspective: 800 }}>
+                {board.map((c, i) => (
+                  <PlayingCard key={i} card={c} dealDelay={i * 0.12} />
+                ))}
+                {Array.from({ length: 5 - board.length }).map((_, i) => (
+                  <div key={`ph-${i}`} className="h-16 w-11 rounded-md border border-dashed border-white/10 sm:h-24 sm:w-16" />
+                ))}
+              </div>
+            )}
             <span className="rounded-full bg-black/40 px-3 py-1 text-xs text-white/70 sm:text-sm">
               Pot: <AnimatedNumber value={displayPot} />
             </span>

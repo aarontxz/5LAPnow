@@ -86,6 +86,7 @@ export function buildTableSnapshot(runtime: RuntimeTable, viewerUserId: string |
       streetName: street?.name ?? "showdown",
       phase: hand.phase,
       board: hand.board,
+      boards: hand.boards.length > 1 ? hand.boards : null,
       pot: totalPot(hand),
       turnSeatIndex,
       players,

@@ -6,3 +6,5 @@ export * from "./shared/pots.js";
 export * from "./shared/engine.js";
 export * from "./shared/registry.js";
 export { NO_LIMIT_TEXAS_HOLDEM } from "./games/NLH.js";
+export { DOUBLE_BOARD_BOMB_POT } from "./games/DoubleBoardBombPot.js";
+export { TRIPLE_BOARD_BOMB_POT } from "./games/TripleBoardBombPot.js";

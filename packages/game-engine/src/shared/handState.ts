@@ -62,7 +62,9 @@ export interface HandState {
   handNumber: number;
   buttonSeatIndex: number;
   streetIndex: number;
+  /** Flat union of all boards; equals boards[0] for single-board games. */
   board: Card[];
+  boards: Card[][];
   deck: Deck;
   players: Map<number, HandPlayerState>;
   /** Acting order for this hand (seat indices), starting left of the button. */
