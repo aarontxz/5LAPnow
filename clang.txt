@@ -1,0 +1,25 @@
+create a new game called clang
+
+2 to 5 players
+
+each player dealt 5 cards and bets X amount
+
+face cards have value 10
+
+if u start with 21 points u can shout clang and everyone pays u the bet X amount
+
+if not players take turns throwing all of the same rank card (usually is 1 card but 
+can be 2 or 3 if they have multiple same rank card) and drawing 1 card to end their turn
+
+after player A throw a card player B whose turn is after player A can choose to 
+eat ur card like in mahjong if they have the same rank card, then player A need 
+to give player B X money immediately and player B gets to throw away all the 
+cards of that rank without drawing any card
+
+on your turn u can also choose to shout clang instead of throwing and drawing cards, 
+when u shout clang everyone opens up their hand and compare their sum of hand value 
+if u r lowest everyone give u X amount if someone else is lowest u pay X amount * (number of players - 1) 
+to the player with the lowest amount 
+
+
+

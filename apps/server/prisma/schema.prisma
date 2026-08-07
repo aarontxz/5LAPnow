@@ -1,0 +1,144 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id                      String                   @id @default(uuid())
+  /// Not collected until the guest first requests a seat at a table; nameless guests can browse the lobby freely.
+  displayName             String?
+  createdAt               DateTime                 @default(now())
+  gameDefinitions         GameDefinition[]
+  seats                   Seat[]
+  chipTransactions        ChipTransaction[]
+  ownedTables             Table[]
+  gameGenerationRequests  GameGenerationRequest[]
+}
+
+enum GameDefinitionSource {
+  builtin
+  ai_generated
+}
+
+model GameDefinition {
+  id          String               @id
+  name        String
+  description String
+  source      GameDefinitionSource
+  /// Validated against the GameDefinition zod schema in @5lapnow/game-engine before being persisted.
+  definition  Json
+  createdById String?
+  createdBy   User?                @relation(fields: [createdById], references: [id])
+  createdAt   DateTime             @default(now())
+  tables      Table[]
+  hands       Hand[]
+  generationRequests GameGenerationRequest[]
+}
+
+enum GameGenerationStatus {
+  pending
+  ready
+  rejected
+}
+
+/// Wizard-of-Oz "AI game generation": the prompt is saved here and shown to the
+/// user as pending, but no generation actually runs. A GameDefinition is later
+/// hand-built and linked in manually (see prisma/seed.ts for the pattern), which
+/// flips this row to `ready` — at that point it shows up in the requester's game
+/// list via GamesService.list()'s `createdById` filter.
+model GameGenerationRequest {
+  id               String               @id @default(uuid())
+  userId           String
+  user             User                 @relation(fields: [userId], references: [id])
+  prompt           String
+  status           GameGenerationStatus @default(pending)
+  gameDefinitionId String?
+  gameDefinition   GameDefinition?      @relation(fields: [gameDefinitionId], references: [id])
+  createdAt        DateTime             @default(now())
+  updatedAt        DateTime             @updatedAt
+}
+
+enum TableStatus {
+  waiting
+  active
+  closed
+}
+
+model Table {
+  id               String         @id @default(uuid())
+  name             String
+  gameDefinitionId String
+  gameDefinition   GameDefinition @relation(fields: [gameDefinitionId], references: [id])
+  /// The table owner approves seat requests and sets/edits approved buy-ins; defaults to whoever created the table.
+  ownerId          String
+  owner            User           @relation(fields: [ownerId], references: [id])
+  smallBlind       Int
+  bigBlind         Int
+  minBuyIn         Int
+  maxBuyIn         Int
+  maxSeats         Int            @default(10)
+  status           TableStatus    @default(waiting)
+  buttonSeatIndex  Int?
+  createdAt        DateTime       @default(now())
+  seats            Seat[]
+  hands            Hand[]
+  chipTransactions ChipTransaction[]
+}
+
+enum SeatStatus {
+  empty
+  active
+  sitting_out
+}
+
+model Seat {
+  id        String     @id @default(uuid())
+  tableId   String
+  table     Table      @relation(fields: [tableId], references: [id])
+  seatIndex Int
+  userId    String?
+  user      User?      @relation(fields: [userId], references: [id])
+  stack     Int        @default(0)
+  status    SeatStatus @default(empty)
+
+  @@unique([tableId, seatIndex])
+}
+
+model Hand {
+  id               String         @id @default(uuid())
+  tableId          String
+  table            Table          @relation(fields: [tableId], references: [id])
+  gameDefinitionId String
+  gameDefinition   GameDefinition @relation(fields: [gameDefinitionId], references: [id])
+  handNumber       Int
+  board            Json
+  /// Serialized ShowdownResult (pots, winners) from @5lapnow/game-engine.
+  results          Json
+  /// Snapshot of {seatIndex, userId, displayName, totalContributed} at the time this hand was played,
+  /// so the log can show who was actually in each seat even if it's since turned over.
+  players          Json
+  /// Ordered HandActionLogEntry[] (posts/folds/checks/calls/bets/raises) from @5lapnow/game-engine.
+  actions          Json           @default("[]")
+  playedAt         DateTime       @default(now())
+}
+
+enum ChipTransactionType {
+  buy_in
+  cash_out
+  win
+}
+
+model ChipTransaction {
+  id        String              @id @default(uuid())
+  userId    String
+  user      User                @relation(fields: [userId], references: [id])
+  tableId   String
+  table     Table               @relation(fields: [tableId], references: [id])
+  type      ChipTransactionType
+  amount    Int
+  createdAt DateTime            @default(now())
+}
