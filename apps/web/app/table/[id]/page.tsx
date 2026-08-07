@@ -100,17 +100,9 @@ export default function TablePage({ params }: { params: Promise<{ id: string }> 
   const isComplete = hand?.phase === "complete";
   const winners: PotShare[] = isComplete && hand?.results ? hand.results.flatMap((pot) => [...pot.hiWinners, ...pot.loWinners]) : [];
 
-  // The server keeps reporting the full pot total through the "complete"
-  // snapshot (chips are already in winners' stacks by then). We hold the felt's
-  // pot number at that final total just long enough for the win animation to
-  // read as "the pot flies out to the winner," then drop it to 0 so the felt
-  // doesn't sit there implying unclaimed chips.
   const [displayPot, setDisplayPot] = useState(0);
   useEffect(() => {
-    if (!hand) {
-      setDisplayPot(0);
-      return;
-    }
+    if (!hand) { setDisplayPot(0); return; }
     if (hand.phase === "complete") {
       setDisplayPot(hand.pot);
       const timer = setTimeout(() => setDisplayPot(0), 900);
@@ -130,6 +122,19 @@ export default function TablePage({ params }: { params: Promise<{ id: string }> 
   const rabbitBoards = hand?.rabbitBoards ?? null;
   const legalActions = hand?.legalActions ?? null;
   const activeSeats = snapshot?.seats.filter((s) => s.status === "active").length ?? 0;
+
+  // 's' hotkey lets the owner start a hand without reaching for the button.
+  useEffect(() => {
+    function handleKeyDown(e: KeyboardEvent) {
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+      const target = e.target as HTMLElement | null;
+      if (target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA")) return;
+      if (e.key.toLowerCase() !== "s") return;
+      if (isOwner && !snapshot?.handInProgress && activeSeats >= 2) startHand();
+    }
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [isOwner, snapshot?.handInProgress, activeSeats, startHand]);
 
   return (
     <main className="relative flex flex-1 flex-col overflow-hidden px-2 py-3 sm:px-6 sm:py-6">
@@ -313,23 +318,13 @@ export default function TablePage({ params }: { params: Promise<{ id: string }> 
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.9 }}
               transition={{ duration: 0.2 }}
-              className="flex flex-col items-end gap-1"
             >
-              {/* Next game label + picker */}
               <NextGamePicker
                 games={games}
                 activeGameDefinitionId={snapshot?.nextGameDefinitionId}
                 onSelect={setNextGame}
+                onStart={startHand}
               />
-
-              <motion.button
-                whileHover={{ scale: 1.04 }}
-                whileTap={{ scale: 0.96 }}
-                onClick={startHand}
-                className="rounded-full bg-emerald-600 px-6 py-2.5 text-sm font-medium text-white hover:bg-emerald-500"
-              >
-                Start hand
-              </motion.button>
             </motion.div>
           )}
         </AnimatePresence>

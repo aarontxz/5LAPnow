@@ -192,6 +192,7 @@ export function ActionControls({
                 inputMode="numeric"
                 value={raiseInput}
                 onChange={(e) => setRaiseInput(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Enter" && isValidRaise) submitRaise(); }}
                 className={`w-16 rounded border px-2 py-1 text-center text-base sm:w-20 sm:text-sm ${
                   isValidRaise ? "border-white/10 bg-black/40 text-white" : "border-red-500 bg-red-950/40 text-red-300"
                 }`}

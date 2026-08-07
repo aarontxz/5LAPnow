@@ -6,36 +6,63 @@ import { AnimatePresence, motion } from "framer-motion";
 interface GameOption {
   id: string;
   name: string;
+  description?: string;
 }
 
 export function NextGamePicker({
   games,
   activeGameDefinitionId,
   onSelect,
+  onStart,
 }: {
   games: GameOption[];
   activeGameDefinitionId: string | undefined;
   onSelect: (gameDefinitionId: string) => void;
+  onStart: () => void;
 }) {
   const [open, setOpen] = useState(false);
-  const activeName = games.find((g) => g.id === activeGameDefinitionId)?.name ?? activeGameDefinitionId;
+  const active = games.find((g) => g.id === activeGameDefinitionId);
+  const activeName = active?.name ?? activeGameDefinitionId ?? "—";
 
   return (
-    <div className="flex flex-col items-end gap-1">
-      <div className="flex items-center gap-1.5 text-xs text-white/50">
-        <span>
-          Next: <span className="text-white/80">{activeName}</span>
-        </span>
+    <div className="flex flex-col items-end gap-1.5">
+      {/* Split button */}
+      <div className="flex overflow-hidden rounded-2xl shadow-lg">
+        {/* Start hand — main action */}
+        <motion.button
+          whileTap={{ scale: 0.97 }}
+          onClick={onStart}
+          className="flex items-center gap-2 bg-emerald-600 px-6 py-3 text-sm font-semibold text-white transition-colors hover:bg-emerald-500 active:bg-emerald-700"
+        >
+          <span className="text-base leading-none">▶</span>
+          Start hand
+        </motion.button>
+
+        {/* Divider */}
+        <div className="w-px bg-emerald-500/60" />
+
+        {/* Game picker trigger */}
         {games.length > 1 && (
           <button
             onClick={() => setOpen((o) => !o)}
-            className="rounded px-1 py-0.5 text-[10px] text-white/40 hover:text-white/70"
+            className="flex items-center gap-1.5 bg-emerald-600 px-3 py-3 text-white/70 transition-colors hover:bg-emerald-500 hover:text-white"
+            title="Change game"
           >
-            change
+            <motion.span
+              animate={{ rotate: open ? 180 : 0 }}
+              transition={{ duration: 0.15 }}
+              className="text-xs leading-none"
+            >
+              ▾
+            </motion.span>
           </button>
         )}
       </div>
 
+      {/* Current game label */}
+      <p className="pr-1 text-[11px] text-white/40">{activeName}</p>
+
+      {/* Dropdown */}
       <AnimatePresence>
         {open && (
           <motion.div
@@ -54,10 +81,15 @@ export function NextGamePicker({
                 <button
                   key={g.id}
                   onClick={() => { onSelect(g.id); setOpen(false); }}
-                  className={`flex w-full items-center gap-3 px-4 py-2.5 text-left text-sm transition-colors hover:bg-white/10 ${isActive ? "text-emerald-400" : "text-white/80"}`}
+                  className={`flex w-full items-start gap-3 px-4 py-3 text-left transition-colors hover:bg-white/10 ${isActive ? "text-emerald-400" : "text-white/80"}`}
                 >
-                  <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${isActive ? "bg-emerald-400" : "bg-transparent"}`} />
-                  {g.name}
+                  <span className={`mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full ${isActive ? "bg-emerald-400" : "bg-white/20"}`} />
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium">{g.name}</p>
+                    {g.description && (
+                      <p className="mt-0.5 line-clamp-2 text-[11px] leading-snug text-white/40">{g.description}</p>
+                    )}
+                  </div>
                 </button>
               );
             })}
@@ -67,3 +99,4 @@ export function NextGamePicker({
     </div>
   );
 }
+
