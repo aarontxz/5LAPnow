@@ -12,7 +12,6 @@ import { PlayingCard } from "@/components/table/PlayingCard";
 import { ActionControls } from "@/components/table/ActionControls";
 import { AnimatedNumber } from "@/components/table/AnimatedNumber";
 import { LedgerModal } from "@/components/table/LedgerModal";
-import { RotationEditor } from "@/components/table/RotationEditor";
 import { NextGamePicker } from "@/components/table/NextGamePicker";
 
 const MAX_SEATS = 10;
