@@ -165,13 +165,10 @@ export function LedgerModal({ tableId, open, onClose }: { tableId: string; open:
                     ))}
                   </div>
                   <div className="mt-2 flex flex-col gap-0.5 text-xs text-neutral-500">
-                    {netEntries.map(({ player, net }) => (
+                    {netEntries.filter(({ net }) => net > 0).map(({ player, net }) => (
                       <span key={player.seatIndex}>
                         <span className="text-neutral-700">{player.displayName ?? `Seat ${player.seatIndex}`}</span>{" "}
-                        <span className={net > 0 ? "font-medium text-emerald-600" : net < 0 ? "font-medium text-red-600" : ""}>
-                          {net > 0 ? "+" : ""}
-                          {net}
-                        </span>
+                        <span className="font-medium text-emerald-600">+{net}</span>
                       </span>
                     ))}
                   </div>

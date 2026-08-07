@@ -70,14 +70,26 @@ export function Modal({
             )}
           >
             {title && (
-              <h2 className={cn("mb-4 shrink-0 text-base font-semibold sm:text-xl", variant === "light" ? "text-neutral-900" : "text-white")}>
-                {title}
-                {subtitle && (
-                  <span className={cn("ml-2 text-xs font-medium sm:text-sm", variant === "light" ? "text-neutral-400" : "text-white/40")}>
-                    {subtitle}
-                  </span>
-                )}
-              </h2>
+              <div className="mb-4 flex shrink-0 items-start justify-between gap-2">
+                <h2 className={cn("text-base font-semibold sm:text-xl", variant === "light" ? "text-neutral-900" : "text-white")}>
+                  {title}
+                  {subtitle && (
+                    <span className={cn("ml-2 text-xs font-medium sm:text-sm", variant === "light" ? "text-neutral-400" : "text-white/40")}>
+                      {subtitle}
+                    </span>
+                  )}
+                </h2>
+                <button
+                  onClick={onClose}
+                  className={cn(
+                    "shrink-0 rounded-lg p-1 text-lg leading-none transition-colors",
+                    variant === "light" ? "text-neutral-400 hover:bg-neutral-100 hover:text-neutral-700" : "text-white/30 hover:bg-white/10 hover:text-white"
+                  )}
+                  aria-label="Close"
+                >
+                  ✕
+                </button>
+              </div>
             )}
             <div className="min-h-0 flex-1">{children}</div>
           </motion.div>

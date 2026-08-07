@@ -3,6 +3,8 @@
 import { useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import type { LegalActionInfo, PlayerAction } from "@5lapnow/game-engine";
+import type { Card } from "@5lapnow/cards";
+import { PlayingCard } from "./PlayingCard";
 
 function HotkeyHint({ letter }: { letter: string }) {
   return (
@@ -15,10 +17,12 @@ function HotkeyHint({ letter }: { letter: string }) {
 export function ActionControls({
   legalActions,
   onAction,
+  holeCards,
 }: {
   /** Null whenever it isn't the viewer's turn — the panel stays mounted and visible, just disabled. */
   legalActions: LegalActionInfo | null;
   onAction: (action: PlayerAction) => void;
+  holeCards?: Card[] | null;
 }) {
   const isMyTurn = legalActions !== null;
   const canCheck = legalActions?.canCheck ?? false;
@@ -33,6 +37,19 @@ export function ActionControls({
 
   const [raiseOpen, setRaiseOpen] = useState(false);
   const [raiseInput, setRaiseInput] = useState(String(minRaiseTo));
+  const panelRef = useRef<HTMLDivElement>(null);
+
+  // Close the raise panel when the user taps outside of it.
+  useEffect(() => {
+    if (!raiseOpen) return;
+    function handlePointerDown(e: PointerEvent) {
+      if (panelRef.current && !panelRef.current.contains(e.target as Node)) {
+        setRaiseOpen(false);
+      }
+    }
+    document.addEventListener("pointerdown", handlePointerDown);
+    return () => document.removeEventListener("pointerdown", handlePointerDown);
+  }, [raiseOpen]);
   const raiseAmountInputRef = useRef<HTMLInputElement>(null);
 
   const raiseValue = Number(raiseInput);
@@ -111,19 +128,28 @@ export function ActionControls({
 
   return (
     <motion.div
+      ref={panelRef}
       initial={{ opacity: 0, y: 16 }}
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, y: 16 }}
       transition={{ duration: 0.25, ease: "easeOut" }}
-      className="fixed inset-x-0 bottom-0 z-40 flex w-full flex-col gap-2 border-t border-white/10 bg-black/90 p-2 backdrop-blur sm:static sm:inset-auto sm:w-full sm:max-w-md sm:gap-3 sm:rounded-xl sm:border sm:bg-black/40 sm:p-3"
+      className="fixed inset-x-0 bottom-0 z-40 flex w-full flex-col gap-1.5 border-t border-white/10 bg-black/60 p-1.5 backdrop-blur-md sm:static sm:inset-auto sm:w-full sm:max-w-md sm:gap-3 sm:rounded-xl sm:border sm:bg-black/40 sm:p-3"
     >
+      {/* Hole cards — only visible on mobile where the panel overlays the seat */}
+      {holeCards && holeCards.length > 0 && (
+        <div className="flex justify-center gap-1 sm:hidden">
+          {holeCards.map((c, i) => (
+            <PlayingCard key={i} card={c} small />
+          ))}
+        </div>
+      )}
       <div className="flex gap-2 sm:gap-3">
         <motion.button
           whileHover={isMyTurn && canBetOrRaise ? { scale: 1.03 } : undefined}
           whileTap={isMyTurn && canBetOrRaise ? { scale: 0.95 } : undefined}
           disabled={!isMyTurn || !canBetOrRaise}
           onClick={toggleRaise}
-          className={`relative flex-1 rounded-full px-4 py-2.5 text-sm font-medium text-white disabled:opacity-30 sm:flex-none ${
+          className={`relative flex-1 rounded-full px-3 py-2 text-sm font-medium text-white disabled:opacity-30 sm:flex-none sm:px-4 sm:py-2.5 ${
             raiseOpen ? "bg-purple-500" : "bg-purple-600 hover:bg-purple-500"
           }`}
         >
@@ -137,7 +163,7 @@ export function ActionControls({
             whileTap={isMyTurn ? { scale: 0.95 } : undefined}
             disabled={!isMyTurn}
             onClick={() => onAction({ type: "check" })}
-            className="relative flex-1 rounded-full bg-neutral-700 px-4 py-2.5 text-sm font-medium text-white hover:bg-neutral-600 disabled:opacity-30 sm:flex-none"
+            className="relative flex-1 rounded-full bg-neutral-700 px-3 py-2 text-sm font-medium text-white hover:bg-neutral-600 disabled:opacity-30 sm:flex-none sm:px-4 sm:py-2.5"
           >
             Check
             <HotkeyHint letter="K" />
@@ -148,7 +174,7 @@ export function ActionControls({
             whileTap={canCall ? { scale: 0.95 } : undefined}
             disabled={!isMyTurn || !canCall}
             onClick={() => onAction({ type: "call" })}
-            className="relative flex-1 rounded-full bg-neutral-700 px-4 py-2.5 text-sm font-medium text-white hover:bg-neutral-600 disabled:opacity-30 sm:flex-none"
+            className="relative flex-1 rounded-full bg-neutral-700 px-3 py-2 text-sm font-medium text-white hover:bg-neutral-600 disabled:opacity-30 sm:flex-none sm:px-4 sm:py-2.5"
           >
             Call {callAmount}
             <HotkeyHint letter="C" />
@@ -160,7 +186,7 @@ export function ActionControls({
           whileTap={isMyTurn ? { scale: 0.95 } : undefined}
           disabled={!isMyTurn}
           onClick={() => onAction({ type: "fold" })}
-          className="relative flex-1 rounded-full bg-red-600/80 px-4 py-2.5 text-sm font-medium text-white hover:bg-red-500 disabled:opacity-30 sm:flex-none"
+          className="relative flex-1 rounded-full bg-red-600/80 px-3 py-2 text-sm font-medium text-white hover:bg-red-500 disabled:opacity-30 sm:flex-none sm:px-4 sm:py-2.5"
         >
           Fold
           <HotkeyHint letter="F" />

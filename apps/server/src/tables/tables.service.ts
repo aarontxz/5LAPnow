@@ -100,6 +100,7 @@ export class TablesService implements OnModuleInit {
 
     const row = await this.prisma.table.create({
       data: {
+        name: "",
         gameDefinitionId: gameDefinition.id,
         ownerId,
         smallBlind: dto.smallBlind,
@@ -338,11 +339,14 @@ export class TablesService implements OnModuleInit {
    * deals `activeSeats`) — safe to flip anytime since it never touches a hand
    * already in progress.
    */
-  async setSeatAway(tableId: string, seatIndex: number, ownerUserId: string, away: boolean): Promise<void> {
+  async setSeatAway(tableId: string, seatIndex: number, requesterUserId: string, away: boolean): Promise<void> {
     const runtime = this.getRuntimeTable(tableId);
-    if (ownerUserId !== runtime.ownerId) throw new ForbiddenException("Only the table owner can do this");
     const seat = runtime.table.seats[seatIndex];
     if (!seat || !seat.playerId) throw new BadRequestException("Seat is not occupied");
+    // Owner can mark anyone away; a player can only toggle their own seat.
+    if (requesterUserId !== runtime.ownerId && seat.playerId !== requesterUserId) {
+      throw new ForbiddenException("You can only set your own seat away");
+    }
 
     seat.status = away ? "sitting-out" : "active";
     await this.prisma.seat.update({

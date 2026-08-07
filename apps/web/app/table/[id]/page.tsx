@@ -68,7 +68,6 @@ export default function TablePage({ params }: { params: Promise<{ id: string }> 
   const {
     snapshot,
     error,
-    connected,
     requestSeat,
     approveRequest,
     rejectRequest,
@@ -138,7 +137,7 @@ export default function TablePage({ params }: { params: Promise<{ id: string }> 
   const activeSeats = snapshot?.seats.filter((s) => s.status === "active").length ?? 0;
 
   return (
-    <main className="relative flex flex-1 flex-col overflow-hidden px-2 py-3 sm:px-6 sm:py-6">
+    <main className="relative flex flex-1 flex-col overflow-hidden px-2 py-2 pb-20 sm:px-6 sm:py-6 sm:pb-6">
       <header className="flex items-start justify-between gap-2">
         <motion.button
           whileHover={{ scale: 1.03 }}
@@ -149,22 +148,27 @@ export default function TablePage({ params }: { params: Promise<{ id: string }> 
           <span aria-hidden>📒</span>
           Log &amp; Ledger
         </motion.button>
-        <div className="text-right">
-          <p className="text-xs text-white/40">{connected ? "connected" : "connecting..."}</p>
-          <h1 className="truncate text-sm font-semibold sm:text-base">{snapshot?.gameName ?? "Loading..."}</h1>
-          {snapshot?.ownerDisplayName && (
-            <p className="text-[10px] text-amber-200/80 sm:text-xs">
-              <span aria-hidden>👑</span> Owner: {snapshot.ownerDisplayName}
-            </p>
-          )}
+        <div className="flex items-center gap-2">
           {mySeat && (
-            <button
-              onClick={stand}
-              disabled={mySeat.leavingAfterHand}
-              className="mt-1 text-xs text-red-400 hover:text-red-300 disabled:cursor-default disabled:text-white/40 disabled:hover:text-white/40"
-            >
-              {mySeat.leavingAfterHand ? "Leaving after this hand..." : "Stand up"}
-            </button>
+            <>
+              <button
+                onClick={() => setSeatAway(mySeatIndex!, mySeat.status !== "sitting-out")}
+                className={`rounded-full border px-3 py-1.5 text-xs font-medium transition-colors ${
+                  mySeat.status === "sitting-out"
+                    ? "border-amber-400/50 bg-amber-400/10 text-amber-300 hover:bg-amber-400/20"
+                    : "border-white/10 bg-white/5 text-white/50 hover:border-white/20 hover:text-white/80"
+                }`}
+              >
+                {mySeat.status === "sitting-out" ? "Back" : "Away"}
+              </button>
+              <button
+                onClick={stand}
+                disabled={mySeat.leavingAfterHand}
+                className="rounded-full border border-red-500/30 bg-red-500/10 px-3 py-1.5 text-xs font-medium text-red-400 transition-colors hover:bg-red-500/20 hover:text-red-300 disabled:cursor-default disabled:border-white/10 disabled:bg-transparent disabled:text-white/30"
+              >
+                {mySeat.leavingAfterHand ? "Leaving…" : "Stand up"}
+              </button>
+            </>
           )}
         </div>
       </header>
@@ -174,23 +178,23 @@ export default function TablePage({ params }: { params: Promise<{ id: string }> 
       {/* This wrapper absorbs all remaining space; the table itself has a fixed
           intrinsic size (via max-w + aspect-ratio) so nothing that appears or
           disappears around it — action buttons, errors — ever resizes it. */}
-      <div className="flex flex-1 items-center justify-center overflow-hidden py-2">
-        <div className="relative aspect-[5/6] w-full max-w-md rounded-2xl border border-emerald-900/50 bg-gradient-to-b from-emerald-950 to-emerald-900 shadow-2xl sm:max-w-2xl">
+      <div className="flex flex-1 items-center justify-center">
+        <div className="relative aspect-[5/7] w-full max-w-md rounded-2xl border border-emerald-900/50 bg-gradient-to-b from-emerald-950 to-emerald-900 shadow-2xl sm:aspect-[5/6] sm:max-w-2xl">
           <div className="absolute left-1/2 top-1/2 flex -translate-x-1/2 -translate-y-1/2 flex-col items-center gap-1 sm:gap-2">
             {boards ? (
               <div className="flex flex-col gap-1">
                 {boards.map((b, bi) => (
                   <div key={bi} className="flex gap-0.5 sm:gap-1" style={{ perspective: 800 }}>
                     {b.map((c, i) => (
-                      <PlayingCard key={i} card={c} dealDelay={i * 0.12} />
+                      <PlayingCard key={i} card={c} small dealDelay={i * 0.12} />
                     ))}
                     {(rabbitBoards?.[bi] ?? []).map((c, i) => (
                       <div key={`r-${i}`} className="opacity-40">
-                        <PlayingCard card={c} dealDelay={i * 0.08} />
+                        <PlayingCard card={c} small dealDelay={i * 0.08} />
                       </div>
                     ))}
                     {Array.from({ length: 5 - b.length - (rabbitBoards?.[bi]?.length ?? 0) }).map((_, i) => (
-                      <div key={`ph-${i}`} className="h-16 w-11 rounded-md border border-dashed border-white/10 sm:h-24 sm:w-16" />
+                      <div key={`ph-${i}`} className="h-11 w-8 rounded-md border border-dashed border-white/10 sm:h-14 sm:w-10" />
                     ))}
                   </div>
                 ))}
@@ -198,21 +202,29 @@ export default function TablePage({ params }: { params: Promise<{ id: string }> 
             ) : (
               <div className="flex gap-0.5 sm:gap-1" style={{ perspective: 800 }}>
                 {board.map((c, i) => (
-                  <PlayingCard key={i} card={c} dealDelay={i * 0.12} />
+                  <PlayingCard key={i} card={c} small dealDelay={i * 0.12} />
                 ))}
                 {(rabbitBoard ?? []).map((c, i) => (
                   <div key={`r-${i}`} className="opacity-40">
-                    <PlayingCard card={c} dealDelay={i * 0.08} />
+                    <PlayingCard card={c} small dealDelay={i * 0.08} />
                   </div>
                 ))}
                 {Array.from({ length: 5 - board.length - (rabbitBoard?.length ?? 0) }).map((_, i) => (
-                  <div key={`ph-${i}`} className="h-16 w-11 rounded-md border border-dashed border-white/10 sm:h-24 sm:w-16" />
+                  <div key={`ph-${i}`} className="h-11 w-8 rounded-md border border-dashed border-white/10 sm:h-14 sm:w-10" />
                 ))}
               </div>
             )}
             <span className="rounded-full bg-black/40 px-3 py-1 text-xs text-white/70 sm:text-sm">
               Pot: <AnimatedNumber value={displayPot} />
             </span>
+            <div className="flex flex-col items-center gap-0.5">
+              <p className="text-[11px] font-semibold text-white/60 sm:text-xs">{snapshot?.gameName}</p>
+              {snapshot?.ownerDisplayName && (
+                <p className="text-[10px] text-amber-200/60">
+                  <span aria-hidden>👑</span> {snapshot.ownerDisplayName}
+                </p>
+              )}
+            </div>
             <AnimatePresence>
               {isComplete && winners.length > 0 && (
                 <motion.div
@@ -350,7 +362,12 @@ export default function TablePage({ params }: { params: Promise<{ id: string }> 
 
         <AnimatePresence>
           {mySeat && snapshot?.handInProgress && (
-            <ActionControls key="action-controls" legalActions={legalActions} onAction={sendAction} />
+            <ActionControls
+              key="action-controls"
+              legalActions={legalActions}
+              onAction={sendAction}
+              holeCards={hand?.players.find((p) => p.seatIndex === mySeatIndex)?.holeCards ?? null}
+            />
           )}
         </AnimatePresence>
       </div>
