@@ -14,7 +14,7 @@ const CLANG_OUTCOME_LABEL: Record<ClangRoundLogEntry["outcome"]["type"], string>
   forced: "Deck exhausted — forced showdown",
 };
 
-/** Net chips won or lost per seat for a Clang round: settlement payments plus any starting-hand bonus payouts. */
+/** Net chips won or lost per seat for a Clang round: settlement payments, eat payments, and starting-hand bonus payouts. */
 function clangNetsBySeat(round: ClangRoundLogEntry): Map<number, number> {
   const nets = new Map<number, number>();
   const apply = (payments: ClangRoundLogEntry["outcome"]["payments"]) => {
@@ -25,6 +25,13 @@ function clangNetsBySeat(round: ClangRoundLogEntry): Map<number, number> {
   };
   apply(round.outcome.payments);
   for (const bonus of round.bonusHits) apply(bonus.payments);
+  for (const action of round.actions) {
+    if (action.type === "eat") {
+      const amount = round.eatPaymentPerCard * action.count;
+      nets.set(action.eaterSeatIndex, (nets.get(action.eaterSeatIndex) ?? 0) + amount);
+      nets.set(action.discarderSeatIndex, (nets.get(action.discarderSeatIndex) ?? 0) - amount);
+    }
+  }
   return nets;
 }
 
