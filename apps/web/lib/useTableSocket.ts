@@ -9,13 +9,14 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4001";
 
 type AppSocket = Socket<ServerToClientEvents, ClientToServerEvents>;
 
-export function useTableSocket(tableId: string) {
+export function useTableSocket(tableId: string | null) {
   const socketRef = useRef<AppSocket | null>(null);
   const [snapshot, setSnapshot] = useState<TableSnapshot | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [connected, setConnected] = useState(false);
 
   useEffect(() => {
+    if (!tableId) return; // wait until session is confirmed before connecting
     const socket: AppSocket = io(API_URL, { withCredentials: true, transports: ["websocket"] });
     socketRef.current = socket;
 
@@ -23,6 +24,7 @@ export function useTableSocket(tableId: string) {
       setConnected(true);
       socket.emit("table:join", { tableId });
     });
+    socket.on("connect_error", (err) => setError(err.message));
     socket.on("disconnect", () => setConnected(false));
     socket.on("table:snapshot", (snap) => setSnapshot(snap));
     socket.on("action:error", (payload) => setError(payload.message));

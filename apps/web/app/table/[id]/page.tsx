@@ -3,7 +3,7 @@
 import { use, useEffect, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import type { PotShare } from "@5lapnow/game-engine";
-import { loadSession, saveSession, type Session } from "@/lib/session";
+import { saveSession, type Session } from "@/lib/session";
 import { api } from "@/lib/api";
 import { useTableSocket } from "@/lib/useTableSocket";
 import { SeatView } from "@/components/table/SeatView";
@@ -28,6 +28,8 @@ function netForSeat(payments: Array<{ fromSeatIndex: number; toSeatIndex: number
 export default function TablePage({ params }: { params: Promise<{ id: string }> }) {
   const { id: tableId } = use(params);
   const [session, setSession] = useState<Session | null>(null);
+  // Socket only connects once the cookie is confirmed alive; null keeps it idle.
+  const [readyTableId, setReadyTableId] = useState<string | null>(null);
   const [ledgerOpen, setLedgerOpen] = useState(false);
   const [linkCopied, setLinkCopied] = useState(false);
   const [games, setGames] = useState<Array<{ id: string; name: string; description: string }>>([]);
@@ -52,28 +54,28 @@ export default function TablePage({ params }: { params: Promise<{ id: string }> 
     clangPassEat,
     clangCallClang,
     clangCallClangInstant,
-  } = useTableSocket(tableId);
+  } = useTableSocket(readyTableId);
 
-  // A shared table link can be someone's very first visit — no local session
-  // yet — so provision a nameless guest session right here instead of
-  // bouncing them to the lobby (which would strand them away from the table
-  // they were actually sent to join).
+  // Validate the cookie before opening the socket — stale localStorage with an
+  // expired cookie would let the page render but silently fail socket auth.
   useEffect(() => {
     function onSession(s: Session) {
       setSession(s);
-      // Load all games so the owner can pick next game / edit rotation.
+      setReadyTableId(tableId);
       void api.listGames(s.userId).then((g) => setGames(g.map((x) => ({ id: x.id, name: x.name, description: x.description }))));
     }
-    const existing = loadSession();
-    if (existing) {
-      onSession(existing);
-      return;
-    }
-    void api.createGuestSession({}).then((s) => {
-      saveSession(s);
-      onSession(s);
+    void api.me().then((me) => {
+      if (me) {
+        saveSession(me);
+        onSession(me);
+      } else {
+        void api.createGuestSession({}).then((s) => {
+          saveSession(s);
+          onSession(s);
+        });
+      }
     });
-  }, []);
+  }, [tableId]);
 
   const hand = snapshot?.hand ?? null;
   const isComplete = hand?.phase === "complete";
