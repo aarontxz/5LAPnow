@@ -9,6 +9,7 @@ import {
 } from "@nestjs/websockets";
 import type { Server, Socket } from "socket.io";
 import type {
+  CardFlipDrawPayload,
   ClangRankPayload,
   ClientToServerEvents,
   HandActionRequest,
@@ -20,8 +21,10 @@ import type {
   ServerToClientEvents,
 } from "@5lapnow/shared-types";
 import { DEFAULT_CLANG_STAKE, DEFAULT_EAT_PAYMENT_PER_CARD } from "@5lapnow/clang-engine";
+import { DEFAULT_CARD_FLIP_STAKE, DEFAULT_CARDS_PER_PLAYER } from "@5lapnow/card-flip-engine";
 import { TablesService } from "./tables.service";
 import { ClangService } from "../clang/clang.service";
+import { CardFlipService } from "../card-flip/card-flip.service";
 import { UsersService } from "../users/users.service";
 import { GUEST_COOKIE_NAME, parseCookieHeader } from "../users/cookie";
 
@@ -46,6 +49,7 @@ export class TablesGateway implements OnGatewayInit, OnModuleInit {
   constructor(
     private readonly tablesService: TablesService,
     private readonly clangService: ClangService,
+    private readonly cardFlipService: CardFlipService,
     private readonly usersService: UsersService
   ) {}
 
@@ -177,10 +181,10 @@ export class TablesGateway implements OnGatewayInit, OnModuleInit {
   }
 
   /**
-   * The one owner-facing "Start" button covers both engines: it deals the
+   * The one owner-facing "Start" button covers every engine: it deals the
    * next hand/round using whatever game is currently active or queued via
-   * table:setNextGame — poker or Clang, resolved here rather than requiring
-   * two separate start actions on the frontend.
+   * table:setNextGame — poker, Clang, or Card Flip, resolved here rather
+   * than requiring a separate start action per game on the frontend.
    */
   @SubscribeMessage("table:startHand")
   async onStartHand(@ConnectedSocket() socket: AppSocket, @MessageBody() payload: { tableId: string }): Promise<void> {
@@ -188,6 +192,8 @@ export class TablesGateway implements OnGatewayInit, OnModuleInit {
       const nextKind = await this.tablesService.resolveNextGameKind(payload.tableId);
       if (nextKind === "clang") {
         await this.clangService.startRound(payload.tableId, socket.data.userId, DEFAULT_CLANG_STAKE, DEFAULT_EAT_PAYMENT_PER_CARD);
+      } else if (nextKind === "cardflip") {
+        await this.cardFlipService.startRound(payload.tableId, socket.data.userId, DEFAULT_CARD_FLIP_STAKE, DEFAULT_CARDS_PER_PLAYER);
       } else {
         await this.tablesService.startHand(payload.tableId, socket.data.userId);
       }
@@ -202,6 +208,11 @@ export class TablesGateway implements OnGatewayInit, OnModuleInit {
   @SubscribeMessage("hand:revealRabbit")
   async onRevealRabbit(@ConnectedSocket() socket: AppSocket, @MessageBody() payload: { tableId: string }): Promise<void> {
     await this.guard(socket, () => this.tablesService.revealRabbit(payload.tableId, socket.data.userId));
+  }
+
+  @SubscribeMessage("hand:showCards")
+  async onShowCards(@ConnectedSocket() socket: AppSocket, @MessageBody() payload: { tableId: string }): Promise<void> {
+    await this.guard(socket, () => this.tablesService.showCards(payload.tableId, socket.data.userId));
   }
 
   @SubscribeMessage("hand:action")
@@ -251,6 +262,14 @@ export class TablesGateway implements OnGatewayInit, OnModuleInit {
     await this.guard(socket, async () => {
       const seatIndex = this.requireSeatIndex(payload.tableId, socket.data.userId);
       await this.clangService.callInstantClang(payload.tableId, seatIndex);
+    });
+  }
+
+  @SubscribeMessage("cardflip:draw")
+  async onCardFlipDraw(@ConnectedSocket() socket: AppSocket, @MessageBody() payload: CardFlipDrawPayload): Promise<void> {
+    await this.guard(socket, async () => {
+      const seatIndex = this.requireSeatIndex(payload.tableId, socket.data.userId);
+      await this.cardFlipService.draw(payload.tableId, seatIndex, payload.pileIndex);
     });
   }
 

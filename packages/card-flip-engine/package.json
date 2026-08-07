@@ -1,5 +1,5 @@
 {
-  "name": "@5lapnow/shared-types",
+  "name": "@5lapnow/card-flip-engine",
   "version": "0.0.0",
   "private": true,
   "main": "./dist/index.js",
@@ -7,15 +7,15 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "dev": "tsc -p tsconfig.json --watch",
+    "test": "vitest run",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@5lapnow/cards": "workspace:*",
-    "@5lapnow/game-engine": "workspace:*",
-    "@5lapnow/clang-engine": "workspace:*",
-    "@5lapnow/card-flip-engine": "workspace:*"
+    "@5lapnow/game-engine": "workspace:*"
   },
   "devDependencies": {
-    "typescript": "^5.6.3"
+    "typescript": "^5.6.3",
+    "vitest": "^2.1.4"
   }
 }

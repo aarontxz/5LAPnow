@@ -2,11 +2,15 @@
 
 import { useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import type { HandPlayerView, PublicSeatView, SeatRequestView } from "@5lapnow/shared-types";
+import type { PublicSeatView, SeatRequestView } from "@5lapnow/shared-types";
+import type { Card } from "@5lapnow/cards";
 import { PlayingCard } from "./PlayingCard";
 import { AnimatedNumber } from "./AnimatedNumber";
 import { Modal } from "./Modal";
 import { cn } from "@/lib/cn";
+import type { PokerSeatGameProps } from "./poker/seatGameProps";
+import type { ClangSeatGameProps } from "./clang/seatGameProps";
+import type { CardFlipSeatGameProps } from "./cardflip/seatGameProps";
 
 const SEAT_BOX = "min-h-20 min-w-20 sm:min-h-32 sm:min-w-44";
 const EMPTY_BOX_CLASS = cn(
@@ -21,20 +25,19 @@ function onlyDigits(value: string): string {
   return value.replace(/[^0-9]/g, "");
 }
 
+/** Per-game specifics: which cards to show and which extra badges/animations render inside the seat box. Everything else (empty seat, pending request, owner stack-adjust modal) is 100% shared across poker/Clang/Card Flip — each game's own slice of this union lives next to that game's other components. */
+type SeatGameProps = PokerSeatGameProps | ClangSeatGameProps | CardFlipSeatGameProps;
+
 export function SeatView({
   seat,
-  handPlayer,
-  isButton,
   isTurn,
   isViewer,
   viewerUserId,
   canSit,
   isOwner,
-  handInProgress,
+  roundInProgress,
   pendingRequest,
-  chipDirection,
   winAmount,
-  winDescription,
   defaultDisplayName,
   onRequest,
   onApprove,
@@ -44,23 +47,19 @@ export function SeatView({
   onRemovePlayer,
   onSetAway,
   onTransferOwnership,
+  game,
 }: {
   seat: PublicSeatView;
-  handPlayer: HandPlayerView | undefined;
-  isButton: boolean;
   isTurn: boolean;
   isViewer: boolean;
   viewerUserId: string | null;
   canSit: boolean;
   isOwner: boolean;
-  handInProgress: boolean;
+  /** Whether a hand/round is currently live at this table — gates the owner's stack-adjust modal copy ("queue for next hand/round" vs. immediate). */
+  roundInProgress: boolean;
   pendingRequest: SeatRequestView | undefined;
-  /** Unit vector from this seat toward the table center, used to push the bet chip out of the seat box and partway toward the pot. */
-  chipDirection: { x: number; y: number };
-  /** Chips this seat won at the last completed showdown, if any. */
+  /** Chips this seat won (or lost, if negative/Clang/Card Flip) from the last hand/round settlement. */
   winAmount?: number;
-  /** Hand description ("Full House, Kings full of Fives") for the win, if applicable. */
-  winDescription?: string | null;
   /** Pre-fills the seat-request name field with whatever name the viewer used last, if any. */
   defaultDisplayName?: string | null;
   onRequest: (buyIn: number, displayName: string) => void;
@@ -71,6 +70,7 @@ export function SeatView({
   onRemovePlayer: () => void;
   onSetAway: (away: boolean) => void;
   onTransferOwnership: () => void;
+  game: SeatGameProps;
 }) {
   const [requesting, setRequesting] = useState(false);
   const [buyIn, setBuyIn] = useState("");
@@ -286,38 +286,67 @@ export function SeatView({
     );
   }
 
+  // From here on the seat is occupied — derive the game-specific cards/badges/highlight.
+  let cards: Card[] | null = null;
+  let cardCount = 0;
+  let folded = false;
+  const isEatCandidate = game.kind === "clang" && game.isEatCandidate;
+  const isDiscarder = game.kind === "clang" && game.isDiscarder;
+  const isLeader = game.kind === "cardflip" && game.isLeader;
+
+  if (game.kind === "poker") {
+    cards = game.handPlayer?.holeCards ?? null;
+    cardCount = game.handPlayer?.holeCardCount ?? 0;
+    folded = game.handPlayer?.folded ?? false;
+  } else if (game.kind === "clang") {
+    cards = game.clangPlayer?.hand ?? null;
+    cardCount = game.clangPlayer?.handCardCount ?? 0;
+  } else {
+    cards = game.cardFlipPlayer?.hand ?? null;
+    cardCount = game.cardFlipPlayer?.handCardCount ?? 0;
+  }
+
   const seatContent = (
     <motion.div
       layout
       initial={{ opacity: 0, scale: 0.9 }}
       animate={{
-        opacity: handPlayer?.folded ? 0.4 : 1,
-        scale: handPlayer?.folded ? 0.95 : 1,
+        opacity: folded ? 0.4 : 1,
+        scale: folded ? 0.95 : 1,
         boxShadow: isTurn
           ? ["0 0 0px rgba(52,211,153,0)", "0 0 20px rgba(52,211,153,0.55)", "0 0 8px rgba(52,211,153,0.3)"]
-          : "0 0 0px rgba(52,211,153,0)",
+          : isEatCandidate
+            ? ["0 0 0px rgba(251,191,36,0)", "0 0 20px rgba(251,191,36,0.55)", "0 0 8px rgba(251,191,36,0.3)"]
+            : "0 0 0px rgba(52,211,153,0)",
       }}
       transition={{
         opacity: { duration: 0.3 },
         scale: { duration: 0.3 },
-        boxShadow: isTurn
-          ? { duration: 1.4, repeat: Infinity, repeatType: "reverse", ease: "easeInOut" }
-          : { duration: 0.3 },
+        boxShadow:
+          isTurn || isEatCandidate
+            ? { duration: 1.4, repeat: Infinity, repeatType: "reverse", ease: "easeInOut" }
+            : { duration: 0.3 },
       }}
       className={cn(
         SEAT_BOX,
         "relative flex flex-col items-center justify-center gap-0.5 rounded-xl border p-1.5 sm:gap-1 sm:p-2",
-        winAmount != null
+        winAmount != null && winAmount > 0
           ? "border-amber-400 shadow-[0_0_18px_rgba(251,191,36,0.5)]"
           : isTurn
             ? "border-emerald-400"
-            : "border-white/10",
+            : isEatCandidate
+              ? "border-amber-400"
+              : isDiscarder
+                ? "border-white/30"
+                : isLeader
+                  ? "border-amber-400/60"
+                  : "border-white/10",
         isViewer ? "bg-purple-900/60" : "bg-neutral-800",
         isOwner && "cursor-pointer hover:border-white/30"
       )}
     >
       <AnimatePresence>
-        {winAmount != null && (
+        {winAmount != null && winAmount !== 0 && (
           <motion.div
             key="win"
             initial={{ opacity: 0, y: 6, scale: 0.8 }}
@@ -326,93 +355,167 @@ export function SeatView({
             transition={{ delay: 0.5, duration: 0.35, type: "spring", stiffness: 300, damping: 20 }}
             className="absolute -top-4 left-1/2 z-10 flex -translate-x-1/2 flex-col items-center gap-0.5"
           >
-            <span className="whitespace-nowrap rounded-full bg-amber-400 px-2 py-0.5 text-[10px] font-bold text-black shadow sm:text-xs">
-              +{winAmount}
+            <span
+              className={cn(
+                "whitespace-nowrap rounded-full px-2 py-0.5 text-[10px] font-bold text-black shadow sm:text-xs",
+                winAmount > 0 ? "bg-amber-400" : "bg-red-400"
+              )}
+            >
+              {winAmount > 0 ? "+" : ""}
+              {winAmount}
             </span>
-            {winDescription && (
+            {game.kind === "poker" && game.winDescription && (
               <span className="whitespace-nowrap rounded-full bg-black/70 px-2 py-0.5 text-[8px] text-amber-200 sm:text-[10px]">
-                {winDescription}
+                {game.winDescription}
               </span>
             )}
           </motion.div>
         )}
       </AnimatePresence>
-      <AnimatePresence>
-        {isButton && (
-          <motion.span
-            initial={{ scale: 0, opacity: 0 }}
-            animate={{ scale: 1, opacity: 1 }}
-            exit={{ scale: 0, opacity: 0 }}
-            transition={{ type: "spring", stiffness: 400, damping: 20 }}
-            className="absolute -top-2 -right-2 flex h-4 w-4 items-center justify-center rounded-full bg-white text-[9px] font-bold text-black sm:h-5 sm:w-5 sm:text-[10px]"
-          >
-            D
-          </motion.span>
-        )}
-      </AnimatePresence>
+      {game.kind === "poker" && (
+        <AnimatePresence>
+          {game.isButton && (
+            <motion.span
+              initial={{ scale: 0, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0, opacity: 0 }}
+              transition={{ type: "spring", stiffness: 400, damping: 20 }}
+              className="absolute -top-2 -right-2 flex h-4 w-4 items-center justify-center rounded-full bg-white text-[9px] font-bold text-black sm:h-5 sm:w-5 sm:text-[10px]"
+            >
+              D
+            </motion.span>
+          )}
+        </AnimatePresence>
+      )}
       <span className="max-w-full truncate text-[10px] font-medium text-white sm:text-xs">{seat.displayName}</span>
       <span className="text-[10px] text-emerald-300 sm:text-xs">
         <AnimatedNumber value={seat.stack} /> chips
       </span>
       {seat.pendingStackAdjustment !== null && (
-        <span className="text-[9px] font-medium text-amber-300 sm:text-[10px]">→ {seat.pendingStackAdjustment} next hand</span>
+        <span className="text-[9px] font-medium text-amber-300 sm:text-[10px]">→ {seat.pendingStackAdjustment} next {game.kind === "poker" ? "hand" : "round"}</span>
       )}
       {seat.status === "sitting-out" && <span className="text-[9px] font-bold text-white/40 sm:text-[10px]">AWAY</span>}
-      {seat.leavingAfterHand && <span className="text-[9px] font-bold text-red-400 sm:text-[10px]">LEAVING AFTER HAND</span>}
-      {handPlayer && (
-        <div className="flex gap-0.5 sm:gap-1">
-          {handPlayer.holeCards
-            ? handPlayer.holeCards.map((c, i) => (
-                <PlayingCard key={`up-${i}-${c.rank}-${c.suit}`} card={c} small dealDelay={i * 0.08} />
-              ))
-            : Array.from({ length: handPlayer.holeCardCount }).map((_, i) => (
-                <PlayingCard key={`down-${i}`} card={null} small dealDelay={i * 0.08} />
-              ))}
+      {seat.leavingAfterHand && (
+        <span className="text-[9px] font-bold text-red-400 sm:text-[10px]">LEAVING AFTER {game.kind === "poker" ? "HAND" : "ROUND"}</span>
+      )}
+      {isEatCandidate && <span className="text-[9px] font-bold text-amber-300 sm:text-[10px]">CAN EAT</span>}
+      {isLeader && <span className="text-[9px] font-bold text-amber-300 sm:text-[10px]">LEADER</span>}
+      {(cards || cardCount > 0) && (
+        <div className="flex flex-wrap justify-center gap-0.5 sm:gap-1">
+          {cards
+            ? cards.map((c, i) => {
+                const isNew = game.kind === "clang" && game.clangPlayer?.justDrewLastCard && i === cards!.length - 1;
+                return (
+                  <motion.div
+                    key={`up-${i}-${c.rank}-${c.suit}`}
+                    animate={
+                      isNew
+                        ? {
+                            y: [0, -5, 0],
+                            boxShadow: [
+                              "0 0 0px rgba(251,191,36,0)",
+                              "0 0 12px rgba(251,191,36,0.9)",
+                              "0 0 6px rgba(251,191,36,0.5)",
+                            ],
+                          }
+                        : { y: 0, boxShadow: "0 0 0px rgba(251,191,36,0)" }
+                    }
+                    transition={isNew ? { duration: 1.1, repeat: Infinity, repeatType: "reverse", ease: "easeInOut" } : { duration: 0.2 }}
+                    className={cn("rounded-sm", isNew && "ring-2 ring-amber-400")}
+                  >
+                    <PlayingCard card={c} small dealDelay={i * 0.08} />
+                  </motion.div>
+                );
+              })
+            : Array.from({ length: cardCount }).map((_, i) => <PlayingCard key={`down-${i}`} card={null} small dealDelay={i * 0.08} />)}
         </div>
       )}
-      <AnimatePresence>
-        {handPlayer && handPlayer.committedThisStreet > 0 && (
-          <motion.div
-            key="bet"
-            initial={{ opacity: 0, scale: 0.4, x: "-50%", y: "-50%" }}
-            animate={{
-              opacity: 1,
-              scale: 1,
-              // Travel distance clears the seat box's own half-width/height (which
-              // grows at the sm: breakpoint) so the chip always lands clearly
-              // outside the box, not overlapping it.
-              x: `calc(-50% + (${chipDirection.x} * clamp(52px, 12vw, 96px)))`,
-              y: `calc(-50% + (${chipDirection.y} * clamp(52px, 12vw, 96px)))`,
-            }}
-            exit={{ opacity: 0, scale: 0.4, x: "-50%", y: "-50%" }}
-            transition={{ type: "spring", stiffness: 300, damping: 22 }}
-            className="pointer-events-none absolute left-1/2 top-1/2 z-10 flex flex-col items-center gap-0.5"
-          >
-            <div className="h-3.5 w-3.5 rounded-full border-2 border-dashed border-white/80 bg-purple-600 shadow sm:h-4 sm:w-4" />
-            <span className="whitespace-nowrap rounded-full bg-black/60 px-1.5 py-0.5 text-[9px] font-medium text-white sm:text-[10px]">
-              <AnimatedNumber value={handPlayer.committedThisStreet} />
-            </span>
-          </motion.div>
-        )}
-      </AnimatePresence>
-      <AnimatePresence>
-        {handPlayer?.allIn && (
-          <motion.span
-            key="allin"
-            initial={{ opacity: 0, scale: 0.5 }}
-            animate={{ opacity: 1, scale: 1 }}
-            exit={{ opacity: 0, scale: 0.5 }}
-            transition={{ type: "spring", stiffness: 400, damping: 18 }}
-            className="text-[9px] font-bold text-amber-400 sm:text-[10px]"
-          >
-            ALL IN
-          </motion.span>
-        )}
-      </AnimatePresence>
+      {game.kind === "clang" && game.clangPlayer?.handValue != null && (
+        <span className="text-[9px] text-white/50 sm:text-[10px]">value {game.clangPlayer.handValue}</span>
+      )}
+      {game.kind === "poker" && game.handPlayer?.handStrengthLabel && (
+        <span className="text-[9px] text-white/50 sm:text-[10px]">{game.handPlayer.handStrengthLabel}</span>
+      )}
+      {game.kind === "cardflip" && game.cardFlipPlayer?.handStrengthLabel && (
+        <span className="text-[9px] text-white/50 sm:text-[10px]">{game.cardFlipPlayer.handStrengthLabel}</span>
+      )}
+      {game.kind === "poker" && (
+        <AnimatePresence>
+          {game.handPlayer && game.handPlayer.committedThisStreet > 0 && (
+            <motion.div
+              key="bet"
+              initial={{ opacity: 0, scale: 0.4, x: "-50%", y: "-50%" }}
+              animate={{
+                opacity: 1,
+                scale: 1,
+                // Travel distance clears the seat box's own half-width/height (which
+                // grows at the sm: breakpoint) so the chip always lands clearly
+                // outside the box, not overlapping it.
+                x: `calc(-50% + (${game.chipDirection.x} * clamp(52px, 12vw, 96px)))`,
+                y: `calc(-50% + (${game.chipDirection.y} * clamp(52px, 12vw, 96px)))`,
+              }}
+              exit={{ opacity: 0, scale: 0.4, x: "-50%", y: "-50%" }}
+              transition={{ type: "spring", stiffness: 300, damping: 22 }}
+              className="pointer-events-none absolute left-1/2 top-1/2 z-10 flex flex-col items-center gap-0.5"
+            >
+              <div className="h-3.5 w-3.5 rounded-full border-2 border-dashed border-white/80 bg-purple-600 shadow sm:h-4 sm:w-4" />
+              <span className="whitespace-nowrap rounded-full bg-black/60 px-1.5 py-0.5 text-[9px] font-medium text-white sm:text-[10px]">
+                <AnimatedNumber value={game.handPlayer.committedThisStreet} />
+              </span>
+            </motion.div>
+          )}
+        </AnimatePresence>
+      )}
+      {game.kind === "poker" && (
+        <AnimatePresence>
+          {game.handPlayer?.allIn && (
+            <motion.span
+              key="allin"
+              initial={{ opacity: 0, scale: 0.5 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.5 }}
+              transition={{ type: "spring", stiffness: 400, damping: 18 }}
+              className="text-[9px] font-bold text-amber-400 sm:text-[10px]"
+            >
+              ALL IN
+            </motion.span>
+          )}
+        </AnimatePresence>
+      )}
     </motion.div>
   );
 
-  if (!isOwner) return seatContent;
+  // Rendered as a sibling, never nested inside seatContent — the owner-view
+  // branch below wraps seatContent in its own <button>, and a nested <button>
+  // would be invalid HTML and steal the click.
+  const showCardsButton = game.kind === "poker" && isViewer && game.handPlayer?.canShow && (
+    <AnimatePresence>
+      <motion.button
+        key="show-cards"
+        initial={{ opacity: 0, y: -4 }}
+        animate={{ opacity: 1, y: 0 }}
+        exit={{ opacity: 0 }}
+        whileHover={{ scale: 1.05 }}
+        whileTap={{ scale: 0.93 }}
+        onClick={(e) => {
+          e.stopPropagation();
+          game.onShowCards?.();
+        }}
+        className="absolute -bottom-5 left-1/2 z-10 -translate-x-1/2 whitespace-nowrap rounded-full bg-black/60 px-2 py-0.5 text-[9px] font-medium text-white/70 hover:bg-black/80 hover:text-white sm:text-[10px]"
+      >
+        Show cards
+      </motion.button>
+    </AnimatePresence>
+  );
+
+  if (!isOwner) {
+    return (
+      <div className="relative">
+        {seatContent}
+        {showCardsButton}
+      </div>
+    );
+  }
 
   const closeAdjust = () => {
     setAdjusting(false);
@@ -437,9 +540,12 @@ export function SeatView({
 
   return (
     <>
-      <button onClick={openAdjust} className="block">
-        {seatContent}
-      </button>
+      <div className="relative">
+        <button onClick={openAdjust} className="block">
+          {seatContent}
+        </button>
+        {showCardsButton}
+      </div>
 
       <Modal
         open={adjusting}
@@ -456,7 +562,7 @@ export function SeatView({
                 <p className="text-[10px] uppercase tracking-wide text-white/40">Current</p>
                 <p className="text-lg font-semibold text-white">{seat.stack}</p>
                 {seat.pendingStackAdjustment !== null && (
-                  <p className="text-xs text-amber-300">→ {seat.pendingStackAdjustment} queued for next hand</p>
+                  <p className="text-xs text-amber-300">→ {seat.pendingStackAdjustment} queued for next {game.kind === "poker" ? "hand" : "round"}</p>
                 )}
               </div>
               <div className="flex overflow-hidden rounded-lg border border-white/10">
@@ -485,9 +591,9 @@ export function SeatView({
                   className="min-w-0 flex-1 bg-black/40 px-3 py-2 text-base text-white placeholder:text-white/30 focus:outline-none"
                 />
               </div>
-              {handInProgress && (
+              {roundInProgress && (
                 <p className="rounded-lg bg-amber-400/10 px-3 py-2 text-xs text-amber-300">
-                  A hand is in progress — this will apply when the next hand starts.
+                  A {game.kind === "poker" ? "hand" : "round"} is in progress — this will apply when the next {game.kind === "poker" ? "hand" : "round"} starts.
                 </p>
               )}
             </div>
@@ -496,7 +602,7 @@ export function SeatView({
               onClick={saveAdjust}
               className="rounded-full bg-emerald-600 py-2.5 text-sm font-medium text-white hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-40"
             >
-              {handInProgress ? "Queue for next hand" : "Update player"}
+              {roundInProgress ? `Queue for next ${game.kind === "poker" ? "hand" : "round"}` : "Update player"}
             </button>
           </div>
 

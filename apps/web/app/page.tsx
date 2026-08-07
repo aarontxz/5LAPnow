@@ -40,7 +40,7 @@ interface GameOption {
   name: string;
   description: string;
   source: string;
-  engine: "poker" | "clang";
+  engine: "poker" | "clang" | "cardflip";
   definition: GameDefinition | null;
 }
 

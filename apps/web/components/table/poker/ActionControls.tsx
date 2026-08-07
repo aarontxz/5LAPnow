@@ -14,10 +14,16 @@ function HotkeyHint({ letter }: { letter: string }) {
 
 export function ActionControls({
   legalActions,
+  pot,
+  currentBet,
   onAction,
 }: {
   /** Null whenever it isn't the viewer's turn — the panel stays mounted and visible, just disabled. */
   legalActions: LegalActionInfo | null;
+  /** Total chips in the pot (all streets), used to compute the pot-fraction bet presets. */
+  pot: number;
+  /** The highest amount committed this street by anyone — the bet/raise being faced (0 pre-flop-open). */
+  currentBet: number;
   onAction: (action: PlayerAction) => void;
 }) {
   const isMyTurn = legalActions !== null;
@@ -27,6 +33,14 @@ export function ActionControls({
   const callAmount = legalActions?.callAmount ?? 0;
   const minRaiseTo = legalActions?.minRaiseTo ?? 0;
   const maxRaiseTo = legalActions?.maxRaiseTo ?? 0;
+
+  // Pot-fraction preset: raise size = fraction * (pot + callAmount), matching
+  // standard pot-limit sizing math (the pot as it would stand after we call).
+  function potFractionToAmount(fraction: number): number {
+    const raiseSize = fraction * (pot + callAmount);
+    const toAmount = currentBet + raiseSize;
+    return Math.min(maxRaiseTo, Math.max(minRaiseTo, Math.round(toAmount)));
+  }
   // While it isn't your turn we don't know whether you'll face a check or a
   // call next, so default to showing "Check" rather than a stale "Call 0".
   const showCheck = !isMyTurn || canCheck;
@@ -191,6 +205,24 @@ export function ActionControls({
             transition={{ duration: 0.2, ease: "easeOut" }}
             className="flex flex-col gap-2 overflow-hidden"
           >
+            <div className="flex gap-1.5">
+              {[
+                { label: "1/3 Pot", fraction: 1 / 3 },
+                { label: "1/2 Pot", fraction: 1 / 2 },
+                { label: "Pot", fraction: 1 },
+              ].map(({ label, fraction }) => (
+                <motion.button
+                  key={label}
+                  type="button"
+                  whileHover={{ scale: 1.03 }}
+                  whileTap={{ scale: 0.95 }}
+                  onClick={() => setRaiseInput(String(potFractionToAmount(fraction)))}
+                  className="flex-1 rounded-full border border-white/10 bg-white/5 px-2 py-1.5 text-xs font-medium text-white/80 hover:border-purple-400/50 hover:bg-white/10"
+                >
+                  {label}
+                </motion.button>
+              ))}
+            </div>
             <div className="flex items-center gap-2">
               <input
                 type="range"

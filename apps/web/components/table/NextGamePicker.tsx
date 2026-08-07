@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 
 interface GameOption {
@@ -24,30 +24,30 @@ export function NextGamePicker({
   const active = games.find((g) => g.id === activeGameDefinitionId);
   const activeName = active?.name ?? activeGameDefinitionId ?? "—";
 
+  // Tapping/clicking anywhere outside this picker closes it — every dropdown/
+  // modal in the app should behave this way (see CLAUDE.md).
+  const rootRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    function onPointerDown(e: PointerEvent) {
+      if (rootRef.current && !rootRef.current.contains(e.target as Node)) setOpen(false);
+    }
+    document.addEventListener("pointerdown", onPointerDown);
+    return () => document.removeEventListener("pointerdown", onPointerDown);
+  }, [open]);
+
   return (
-    <div className="flex flex-col items-end gap-1.5">
-      {/* Split button */}
-      <div className="flex overflow-hidden rounded-2xl shadow-lg">
-        {/* Start hand — main action */}
-        <motion.button
-          whileTap={{ scale: 0.97 }}
-          onClick={onStart}
-          className="flex items-center gap-2 bg-emerald-600 px-6 py-3 text-sm font-semibold text-white transition-colors hover:bg-emerald-500 active:bg-emerald-700"
-        >
-          <span className="text-base leading-none">▶</span>
-          Start hand
-        </motion.button>
-
-        {/* Divider */}
-        <div className="w-px bg-emerald-500/60" />
-
-        {/* Game picker trigger */}
-        {games.length > 1 && (
+    <div ref={rootRef} className="flex w-64 flex-col items-end gap-1.5">
+      {/* Stacked button */}
+      <div className="flex w-full flex-col overflow-hidden rounded-2xl shadow-lg">
+        {/* Game name + change-game trigger */}
+        {games.length > 1 ? (
           <button
             onClick={() => setOpen((o) => !o)}
-            className="flex items-center gap-1.5 bg-emerald-600 px-3 py-3 text-white/70 transition-colors hover:bg-emerald-500 hover:text-white"
+            className="flex items-center justify-between gap-2 bg-emerald-700 px-4 py-2 text-xs font-medium text-white/80 transition-colors hover:bg-emerald-600 hover:text-white"
             title="Change game"
           >
+            <span className="truncate">{activeName}</span>
             <motion.span
               animate={{ rotate: open ? 180 : 0 }}
               transition={{ duration: 0.15 }}
@@ -56,11 +56,23 @@ export function NextGamePicker({
               ▾
             </motion.span>
           </button>
+        ) : (
+          <p className="truncate bg-emerald-700 px-4 py-2 text-xs font-medium text-white/80">{activeName}</p>
         )}
-      </div>
 
-      {/* Current game label */}
-      <p className="pr-1 text-[11px] text-white/40">{activeName}</p>
+        {/* Divider */}
+        <div className="h-px bg-emerald-500/60" />
+
+        {/* Start hand — main action */}
+        <motion.button
+          whileTap={{ scale: 0.97 }}
+          onClick={onStart}
+          className="flex items-center justify-center gap-2 bg-emerald-600 px-6 py-3 text-sm font-semibold text-white transition-colors hover:bg-emerald-500 active:bg-emerald-700"
+        >
+          <span className="text-base leading-none">▶</span>
+          Start hand
+        </motion.button>
+      </div>
 
       {/* Dropdown */}
       <AnimatePresence>
@@ -70,7 +82,7 @@ export function NextGamePicker({
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.95, y: 4 }}
             transition={{ duration: 0.15 }}
-            className="overflow-hidden rounded-2xl border border-white/10 bg-black/90 shadow-2xl backdrop-blur-sm"
+            className="w-full overflow-hidden rounded-2xl border border-white/10 bg-black/90 shadow-2xl backdrop-blur-sm"
           >
             <p className="border-b border-white/10 px-4 py-2 text-[10px] font-semibold uppercase tracking-widest text-white/30">
               Next hand

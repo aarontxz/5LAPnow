@@ -36,24 +36,30 @@ export function useTableSocket(tableId: string | null) {
   }, [tableId]);
 
   const requestSeat = (seatIndex: number, buyIn: number, displayName: string) =>
-    socketRef.current?.emit("seat:request", { tableId, seatIndex, buyIn, displayName });
-  const approveRequest = (requestId: string, buyIn: number) => socketRef.current?.emit("seat:approve", { tableId, requestId, buyIn });
-  const rejectRequest = (requestId: string) => socketRef.current?.emit("seat:reject", { tableId, requestId });
-  const cancelRequest = (requestId: string) => socketRef.current?.emit("seat:cancelRequest", { tableId, requestId });
-  const adjustStack = (seatIndex: number, newStack: number) => socketRef.current?.emit("seat:adjustStack", { tableId, seatIndex, newStack });
-  const removePlayer = (seatIndex: number) => socketRef.current?.emit("seat:remove", { tableId, seatIndex });
-  const setSeatAway = (seatIndex: number, away: boolean) => socketRef.current?.emit("seat:setAway", { tableId, seatIndex, away });
-  const transferOwnership = (seatIndex: number) => socketRef.current?.emit("table:transferOwnership", { tableId, seatIndex });
-  const stand = () => socketRef.current?.emit("seat:stand", { tableId });
-  const startHand = () => socketRef.current?.emit("table:startHand", { tableId });
-  const setNextGame = (gameDefinitionId: string) => socketRef.current?.emit("table:setNextGame", { tableId, gameDefinitionId });
-  const sendAction = (action: PlayerAction) => socketRef.current?.emit("hand:action", { tableId, action });
-  const revealRabbit = () => socketRef.current?.emit("hand:revealRabbit", { tableId });
-  const clangPlay = (rank: number) => socketRef.current?.emit("clang:play", { tableId, rank });
-  const clangEat = () => socketRef.current?.emit("clang:eat", { tableId });
-  const clangPassEat = () => socketRef.current?.emit("clang:passEat", { tableId });
-  const clangCallClang = () => socketRef.current?.emit("clang:callClang", { tableId });
-  const clangCallClangInstant = () => socketRef.current?.emit("clang:callClangInstant", { tableId });
+    tableId && socketRef.current?.emit("seat:request", { tableId, seatIndex, buyIn, displayName });
+  const approveRequest = (requestId: string, buyIn: number) =>
+    tableId && socketRef.current?.emit("seat:approve", { tableId, requestId, buyIn });
+  const rejectRequest = (requestId: string) => tableId && socketRef.current?.emit("seat:reject", { tableId, requestId });
+  const cancelRequest = (requestId: string) => tableId && socketRef.current?.emit("seat:cancelRequest", { tableId, requestId });
+  const adjustStack = (seatIndex: number, newStack: number) =>
+    tableId && socketRef.current?.emit("seat:adjustStack", { tableId, seatIndex, newStack });
+  const removePlayer = (seatIndex: number) => tableId && socketRef.current?.emit("seat:remove", { tableId, seatIndex });
+  const setSeatAway = (seatIndex: number, away: boolean) =>
+    tableId && socketRef.current?.emit("seat:setAway", { tableId, seatIndex, away });
+  const transferOwnership = (seatIndex: number) => tableId && socketRef.current?.emit("table:transferOwnership", { tableId, seatIndex });
+  const stand = () => tableId && socketRef.current?.emit("seat:stand", { tableId });
+  const startHand = () => tableId && socketRef.current?.emit("table:startHand", { tableId });
+  const setNextGame = (gameDefinitionId: string) =>
+    tableId && socketRef.current?.emit("table:setNextGame", { tableId, gameDefinitionId });
+  const sendAction = (action: PlayerAction) => tableId && socketRef.current?.emit("hand:action", { tableId, action });
+  const revealRabbit = () => tableId && socketRef.current?.emit("hand:revealRabbit", { tableId });
+  const showCards = () => tableId && socketRef.current?.emit("hand:showCards", { tableId });
+  const clangPlay = (rank: number) => tableId && socketRef.current?.emit("clang:play", { tableId, rank });
+  const clangEat = () => tableId && socketRef.current?.emit("clang:eat", { tableId });
+  const clangPassEat = () => tableId && socketRef.current?.emit("clang:passEat", { tableId });
+  const clangCallClang = () => tableId && socketRef.current?.emit("clang:callClang", { tableId });
+  const clangCallClangInstant = () => tableId && socketRef.current?.emit("clang:callClangInstant", { tableId });
+  const cardFlipDraw = (pileIndex: number) => tableId && socketRef.current?.emit("cardflip:draw", { tableId, pileIndex });
 
   return {
     snapshot,
@@ -72,10 +78,12 @@ export function useTableSocket(tableId: string | null) {
     setNextGame,
     sendAction,
     revealRabbit,
+    showCards,
     clangPlay,
     clangEat,
     clangPassEat,
     clangCallClang,
     clangCallClangInstant,
+    cardFlipDraw,
   };
 }

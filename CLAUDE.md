@@ -72,6 +72,10 @@ There's no registration — `POST /auth/guest-session` issues an httpOnly cookie
 - **Next-game override**: the table owner can queue a different `GameDefinition` for the next hand only (`table:setNextGame` → `runtime.nextGameOverride`), auto-cleared once that hand starts.
 - **Stand-up while a hand is live**: never removes a seat mid-hand (would corrupt pot math). Instead the seat is flagged (`standRequests`) to auto-check/fold on its turns for the rest of that hand; eviction happens once the hand reaches `complete` (`TablesService.advanceHand`/`settleStandRequests`).
 
+### Frontend conventions
+
+- **Every modal/dropdown must close on an outside click** (and stay open on clicks inside it), consistently app-wide — this matters most on mobile, where there's no hover/escape affordance. The shared `apps/web/components/table/Modal.tsx` gets this for free (backdrop `onClick={onClose}`, content `onClick={(e) => e.stopPropagation()}`). Custom non-`Modal` dropdowns (e.g. `GameSelect.tsx`, `NextGamePicker.tsx`) don't have a backdrop to hook, so they instead attach a `document`-level `pointerdown` listener while open that closes on any event whose target falls outside a `ref`'d root element — see either of those two files for the pattern to copy for new dropdowns.
+
 ### Shared contract
 
 `packages/shared-types` is the single source of truth for REST DTOs, Socket.IO event payloads (`ClientToServerEvents`/`ServerToClientEvents`), and the `TableSnapshot`/`HandView` view models — both `apps/web` and `apps/server` import from it so the wire format can't drift between them.

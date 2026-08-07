@@ -1,6 +1,11 @@
 import { GameDefinition, HandState, TableState, getLegalActions } from "@5lapnow/game-engine";
 import { ClangRoundState, handValue } from "@5lapnow/clang-engine";
+import { CardFlipRoundState, describePartialHand } from "@5lapnow/card-flip-engine";
+import { Card, compareEvaluatedHands, describeEvaluatedHand, evaluateBestHand } from "@5lapnow/cards";
 import {
+  CardFlipLegalActions,
+  CardFlipPlayerView,
+  CardFlipRoundView,
   ClangLegalActions,
   ClangPlayerView,
   ClangRoundView,
@@ -43,9 +48,10 @@ export interface RuntimeTable {
   gameDefinition: GameDefinition | null;
   table: TableState;
   hand: HandState | null;
-  handCounter: number;
   clangRound: ClangRoundState | null;
-  clangRoundCounter: number;
+  cardFlipRound: CardFlipRoundState | null;
+  /** Single sequence shared by all engines, so hand/round numbers stay one continuous timeline across engine switches (hand 1 NLH, hand 2 Clang, hand 3 Clang, ...). */
+  gameCounter: number;
   /** Prefill hints for the owner's next "Deal" form. */
   clangLastStake: number | null;
   clangLastEatPaymentPerCard: number | null;
@@ -56,6 +62,24 @@ export interface RuntimeTable {
   standRequests: Set<number>;
   /** One-hand game override set by the owner; cleared at the start of the next hand. Poker-only. */
   nextGameOverride: NextGameOverride | null;
+}
+
+/**
+ * Live "Pair of Kings" / "Ace High" label for a poker seat's hole cards
+ * combined with the board(s) currently dealt. Multi-board games (bomb pots)
+ * evaluate each board separately — mixing cards across boards would be
+ * meaningless — and show whichever board currently gives the stronger hand.
+ * Null preflop (fewer than 5 combined cards on any board yet).
+ */
+function computeHandStrengthLabel(holeCards: Card[], boards: Card[][]): string | null {
+  let best: ReturnType<typeof evaluateBestHand> | null = null;
+  for (const board of boards) {
+    const combined = [...holeCards, ...board];
+    if (combined.length < 5) continue;
+    const evaluated = evaluateBestHand(combined, "high");
+    if (!best || compareEvaluatedHands(evaluated, best, "high") > 0) best = evaluated;
+  }
+  return best ? describeEvaluatedHand(best, "high") : null;
 }
 
 function totalPot(hand: HandState): number {
@@ -122,13 +146,53 @@ function buildClangRoundView(round: ClangRoundState, table: TableState, viewerUs
     legalActions,
     result: round.result,
     drawPileCount: round.drawPile.length,
+    topDiscard: round.lastDiscardCount > 0 ? round.discardPile.slice(-round.lastDiscardCount) : [],
+    discardPileCount: round.discardPile.length,
+  };
+}
+
+function buildCardFlipRoundView(round: CardFlipRoundState, table: TableState, viewerUserId: string | null): CardFlipRoundView {
+  const complete = round.phase === "complete";
+
+  // Unlike Clang/poker, every hand is public here — you need to see the
+  // current leader's hand (and everyone else's) to know what you're up
+  // against, since the beat-the-leader rule is the whole game.
+  const players: CardFlipPlayerView[] = round.players.map((p) => ({
+    seatIndex: p.seatIndex,
+    handCardCount: p.hand.length,
+    hand: p.hand,
+    handStrengthLabel: p.hand.length > 0 ? describePartialHand(p.hand) : null,
+  }));
+
+  const turnSeatIndex = round.phase === "turn" ? (round.turnOrder[round.turnIndex] ?? null) : null;
+  const viewerSeatIndex = viewerUserId !== null ? (table.seats.find((s) => s.playerId === viewerUserId)?.seatIndex ?? null) : null;
+
+  let legalActions: CardFlipLegalActions | null = null;
+  if (viewerSeatIndex !== null && round.players.some((p) => p.seatIndex === viewerSeatIndex) && !complete) {
+    legalActions = { canDraw: turnSeatIndex === viewerSeatIndex };
+  }
+
+  return {
+    roundNumber: round.roundNumber,
+    stake: round.stake,
+    cardsPerPlayer: round.cardsPerPlayer,
+    phase: round.phase,
+    turnSeatIndex,
+    leaderSeatIndex: round.leaderSeatIndex,
+    pileCounts: round.piles.map((pile) => pile.length),
+    players,
+    legalActions,
+    result: round.result,
   };
 }
 
 /**
  * Builds the per-viewer TableSnapshot: a player only ever sees their own
- * hole cards (poker) or hand (Clang) while a hand/round is live; everyone's
- * cards are revealed once it reaches "complete" (poker: unless they folded).
+ * hole cards (poker) or hand (Clang/Card Flip) while a hand/round is live.
+ * Once a poker hand reaches "complete", a seat's hole cards are revealed to
+ * everyone only if that seat had to show (part of a pot compared against
+ * another live hand) or chose to voluntarily reveal via `showCards` —
+ * uncontested winners and folders stay hidden by default.
  */
 export function buildTableSnapshot(runtime: RuntimeTable, viewerUserId: string | null): TableSnapshot {
   const { table, hand, gameDefinition, gameKind } = runtime;
@@ -149,9 +213,15 @@ export function buildTableSnapshot(runtime: RuntimeTable, viewerUserId: string |
   let handView: HandView | null = null;
   if (hand && gameDefinition) {
     const street = gameDefinition.streets[hand.streetIndex];
+    const viewerSeatIndex = viewerUserId !== null ? (table.seats.find((s) => s.playerId === viewerUserId)?.seatIndex ?? null) : null;
+    const mustShowSeats = new Set(hand.results?.mustShowSeats ?? []);
     const players: HandPlayerView[] = [...hand.players.values()].map((p) => {
       const isOwnSeat = viewerUserId !== null && table.seats[p.seatIndex]?.playerId === viewerUserId;
-      const revealAtComplete = hand.phase === "complete" && !p.folded;
+      // Only seats that lost a real card comparison (contested pot) are forced to show;
+      // everyone else — uncontested winners and folders — stays hidden unless they opt in via `shown`.
+      const revealAtComplete = hand.phase === "complete" && (mustShowSeats.has(p.seatIndex) || p.shown);
+      const holeCardsVisible = isOwnSeat || revealAtComplete;
+      const boards = hand.boards.length > 0 ? hand.boards : [hand.board];
       return {
         seatIndex: p.seatIndex,
         folded: p.folded,
@@ -159,7 +229,9 @@ export function buildTableSnapshot(runtime: RuntimeTable, viewerUserId: string |
         committedThisStreet: p.committedThisStreet,
         totalContributed: p.totalContributed,
         holeCardCount: p.holeCards.length,
-        holeCards: isOwnSeat || revealAtComplete ? p.holeCards : null,
+        holeCards: holeCardsVisible ? p.holeCards : null,
+        canShow: isOwnSeat && hand.phase === "complete" && !revealAtComplete && p.holeCards.length > 0,
+        handStrengthLabel: holeCardsVisible ? computeHandStrengthLabel(p.holeCards, boards) : null,
       };
     });
 
@@ -176,8 +248,9 @@ export function buildTableSnapshot(runtime: RuntimeTable, viewerUserId: string |
       phase: hand.phase,
       board: hand.board,
       boards: hand.boards.length > 1 ? hand.boards : null,
-      rabbitBoard: hand.rabbitBoard,
-      rabbitBoards: hand.rabbitBoards,
+      // Same drawn cards for everyone, but only shown to a viewer once their own seat has revealed.
+      rabbitBoard: viewerSeatIndex !== null && hand.rabbitRevealedSeats.has(viewerSeatIndex) ? hand.rabbitBoard : null,
+      rabbitBoards: viewerSeatIndex !== null && hand.rabbitRevealedSeats.has(viewerSeatIndex) ? hand.rabbitBoards : null,
       pot: totalPot(hand),
       turnSeatIndex,
       players,
@@ -198,11 +271,14 @@ export function buildTableSnapshot(runtime: RuntimeTable, viewerUserId: string |
     runtime.nextGameOverride ?? { gameDefinitionId: runtime.gameDefinitionId, gameName: runtime.gameName };
 
   const clangRound = runtime.clangRound ? buildClangRoundView(runtime.clangRound, table, viewerUserId) : null;
+  const cardFlipRound = runtime.cardFlipRound ? buildCardFlipRoundView(runtime.cardFlipRound, table, viewerUserId) : null;
 
   const handInProgress =
     gameKind === "poker"
       ? hand !== null && hand.phase !== "complete"
-      : runtime.clangRound !== null && runtime.clangRound.phase !== "complete";
+      : gameKind === "clang"
+        ? runtime.clangRound !== null && runtime.clangRound.phase !== "complete"
+        : runtime.cardFlipRound !== null && runtime.cardFlipRound.phase !== "complete";
 
   return {
     tableId: runtime.tableId,
@@ -221,5 +297,6 @@ export function buildTableSnapshot(runtime: RuntimeTable, viewerUserId: string |
     clangRound,
     clangLastStake: runtime.clangLastStake,
     clangLastEatPaymentPerCard: runtime.clangLastEatPaymentPerCard,
+    cardFlipRound,
   };
 }

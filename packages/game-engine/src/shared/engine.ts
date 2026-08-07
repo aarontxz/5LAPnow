@@ -51,6 +51,7 @@ export class DeclarativeEngine {
         totalContributed: 0,
         committedThisStreet: 0,
         hasActedThisRound: false,
+        shown: false,
       });
     }
 
@@ -65,6 +66,7 @@ export class DeclarativeEngine {
       boards: boardArrays,
       rabbitBoard: null,
       rabbitBoards: null,
+      rabbitRevealedSeats: new Set(),
       deck,
       players,
       seatOrder,

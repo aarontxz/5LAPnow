@@ -43,6 +43,11 @@ export interface ClangRankPayload {
   rank: number;
 }
 
+export interface CardFlipDrawPayload {
+  tableId: string;
+  pileIndex: number;
+}
+
 export interface ClientToServerEvents {
   "table:join": (payload: { tableId: string }) => void;
   "table:leave": (payload: { tableId: string }) => void;
@@ -67,6 +72,8 @@ export interface ClientToServerEvents {
   "hand:action": (payload: HandActionRequest) => void;
   /** Any seated player can request to see the undealt community cards after a hand ends early. */
   "hand:revealRabbit": (payload: { tableId: string }) => void;
+  /** After a hand completes, a player who wasn't forced to show at a contested showdown (won uncontested, or folded earlier) can voluntarily reveal their hole cards to everyone. */
+  "hand:showCards": (payload: { tableId: string }) => void;
   /** On your turn: discard all cards of this rank. */
   "clang:play": (payload: ClangRankPayload) => void;
   /** Only legal for the specific eligible next-player while awaiting an Eat decision, and only if they hold a matching card. */
@@ -76,6 +83,8 @@ export interface ClientToServerEvents {
   "clang:callClang": (payload: { tableId: string }) => void;
   /** Out of turn: only legal during the instant-21 window, for a holder of exactly 21. */
   "clang:callClangInstant": (payload: { tableId: string }) => void;
+  /** On your turn: draw one card from pile 0, 1, or 2. */
+  "cardflip:draw": (payload: CardFlipDrawPayload) => void;
 }
 
 export interface ServerToClientEvents {

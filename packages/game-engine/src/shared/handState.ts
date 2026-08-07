@@ -12,6 +12,8 @@ export interface HandPlayerState {
   /** Chips put in during the current betting round only. */
   committedThisStreet: number;
   hasActedThisRound: boolean;
+  /** Player chose to voluntarily reveal their hole cards after the hand completed, even though they weren't required to. */
+  shown: boolean;
 }
 
 export interface BettingRoundState {
@@ -31,6 +33,8 @@ export interface PotShare {
   amount: number;
   /** Human-readable label for the hand this share was won with, e.g. "Full House, Kings full of Fives". Omitted for uncontested (win-by-fold) pots. */
   description?: string;
+  /** Which board (0-indexed) this share was won on — only set for multi-board (double/triple board bomb pot) hands. */
+  boardIndex?: number;
 }
 
 export interface PotResult {
@@ -44,6 +48,8 @@ export interface ShowdownResult {
   pots: PotResult[];
   /** Seats that reached showdown (i.e. not folded, not folded-out earlier). */
   revealedSeats: number[];
+  /** Seats that had to show their cards because they were eligible in a pot contested by more than one player. Everyone else won every pot they were eligible for uncontested and may choose to voluntarily reveal instead. */
+  mustShowSeats: number[];
 }
 
 /** `"post"` covers antes/blinds; the rest mirror `PlayerAction["type"]` from bettingRound.ts. */
@@ -65,9 +71,11 @@ export interface HandState {
   /** Flat union of all boards; equals boards[0] for single-board games. */
   board: Card[];
   boards: Card[][];
-  /** Community cards that would have come next — null until rabbit hunting is triggered or N/A (all cards dealt). */
+  /** Community cards that would have come next — null until any player rabbit hunts (or N/A, all cards dealt). Same cards for everyone once drawn; who can actually see them is gated per-viewer by `rabbitRevealedSeats`. */
   rabbitBoard: Card[] | null;
   rabbitBoards: Card[][] | null;
+  /** Seats that have individually chosen to rabbit hunt — each sees `rabbitBoard`/`rabbitBoards` privately once their own seat is in here. */
+  rabbitRevealedSeats: Set<number>;
   deck: Deck;
   players: Map<number, HandPlayerState>;
   /** Acting order for this hand (seat indices), starting left of the button. */

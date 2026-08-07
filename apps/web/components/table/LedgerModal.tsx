@@ -1,91 +1,35 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import type { HandActionLogEntry } from "@5lapnow/game-engine";
-import type { ClangRoundLogEntry, HandLogEntry, TableGameKind, TableLedgerResponse } from "@5lapnow/shared-types";
+import type { CardFlipRoundLogEntry, ClangRoundLogEntry, HandLogEntry, TableLedgerResponse } from "@5lapnow/shared-types";
 import { Modal } from "./Modal";
-import { PlayingCard } from "./PlayingCard";
+import { HandLogCard } from "./poker/HandLogCard";
+import { ClangRoundLogCard } from "./clang/ClangRoundLogCard";
+import { CardFlipRoundLogCard } from "./cardflip/CardFlipRoundLogCard";
 import { api } from "@/lib/api";
 import { cn } from "@/lib/cn";
 
-const CLANG_OUTCOME_LABEL: Record<ClangRoundLogEntry["outcome"]["type"], string> = {
-  instant: "Instant Clang (21)",
-  call: "Called Clang",
-  forced: "Deck exhausted — forced showdown",
-};
+type LogItem =
+  | { kind: "poker"; number: number; hand: HandLogEntry }
+  | { kind: "clang"; number: number; round: ClangRoundLogEntry }
+  | { kind: "cardflip"; number: number; round: CardFlipRoundLogEntry };
 
-/** Net chips won or lost per seat for a Clang round: settlement payments, eat payments, and starting-hand bonus payouts. */
-function clangNetsBySeat(round: ClangRoundLogEntry): Map<number, number> {
-  const nets = new Map<number, number>();
-  const apply = (payments: ClangRoundLogEntry["outcome"]["payments"]) => {
-    for (const p of payments) {
-      nets.set(p.toSeatIndex, (nets.get(p.toSeatIndex) ?? 0) + p.amount);
-      nets.set(p.fromSeatIndex, (nets.get(p.fromSeatIndex) ?? 0) - p.amount);
-    }
-  };
-  apply(round.outcome.payments);
-  for (const bonus of round.bonusHits) apply(bonus.payments);
-  for (const action of round.actions) {
-    if (action.type === "eat") {
-      const amount = round.eatPaymentPerCard * action.count;
-      nets.set(action.eaterSeatIndex, (nets.get(action.eaterSeatIndex) ?? 0) + amount);
-      nets.set(action.discarderSeatIndex, (nets.get(action.discarderSeatIndex) ?? 0) - amount);
-    }
-  }
-  return nets;
-}
-
-function actionLabel(action: HandActionLogEntry): string {
-  switch (action.type) {
-    case "post":
-      return `posts ${action.amount}`;
-    case "fold":
-      return "folds";
-    case "check":
-      return "checks";
-    case "call":
-      return `calls ${action.amount}`;
-    case "bet":
-      return `bets ${action.amount}`;
-    case "raise":
-      return `raises to ${action.amount}`;
-  }
-}
-
-/** Net chips won or lost per seat for a hand: total won across all pots minus what that seat put in. */
-function netsBySeat(hand: HandLogEntry): Map<number, number> {
-  const wonBySeat = new Map<number, number>();
-  for (const pot of hand.results) {
-    for (const w of [...pot.hiWinners, ...pot.loWinners]) {
-      wonBySeat.set(w.seatIndex, (wonBySeat.get(w.seatIndex) ?? 0) + w.amount);
-    }
-  }
-  const nets = new Map<number, number>();
-  for (const p of hand.players) {
-    nets.set(p.seatIndex, (wonBySeat.get(p.seatIndex) ?? 0) - p.totalContributed);
-  }
-  return nets;
-}
-
-/** Groups a hand's chronological action log into per-street buckets, preserving street order. */
-function actionsByStreet(actions: HandActionLogEntry[]): Array<[string, HandActionLogEntry[]]> {
-  const byStreet = new Map<string, HandActionLogEntry[]>();
-  for (const action of actions) {
-    const bucket = byStreet.get(action.streetName);
-    if (bucket) bucket.push(action);
-    else byStreet.set(action.streetName, [action]);
-  }
-  return [...byStreet.entries()];
+/** Merges every engine's history into one chronological timeline — hand/round numbers share a single sequence per table (see TablesService.gameCounter), so sorting by number reflects actual play order across engine switches. */
+function mergeLog(data: TableLedgerResponse): LogItem[] {
+  const items: LogItem[] = [
+    ...data.hands.map((hand): LogItem => ({ kind: "poker", number: hand.handNumber, hand })),
+    ...data.clangRounds.map((round): LogItem => ({ kind: "clang", number: round.roundNumber, round })),
+    ...data.cardFlipRounds.map((round): LogItem => ({ kind: "cardflip", number: round.roundNumber, round })),
+  ];
+  return items.sort((a, b) => a.number - b.number);
 }
 
 export function LedgerModal({
   tableId,
-  gameKind = "poker",
   open,
   onClose,
 }: {
   tableId: string;
-  gameKind?: TableGameKind;
   open: boolean;
   onClose: () => void;
 }) {
@@ -172,140 +116,24 @@ export function LedgerModal({
           </div>
         )}
 
-        {!loading && data && tab === "log" && gameKind === "clang" && (
+        {!loading && data && tab === "log" && (
           <div className="grid min-h-0 flex-1 grid-cols-1 gap-3 overflow-y-auto sm:grid-cols-2 lg:grid-cols-3">
-            {data.clangRounds.length === 0 && <p className="text-sm text-neutral-400">No hands played yet.</p>}
-            {[...data.clangRounds].reverse().map((r) => {
-              const nets = clangNetsBySeat(r);
-              const netEntries = r.players
-                .map((p) => ({ player: p, net: nets.get(p.seatIndex) ?? 0 }))
-                .filter(({ net }) => net !== 0)
-                .sort((a, b) => b.net - a.net);
-              const expanded = expandedHand === r.roundNumber;
-              return (
-                <button
-                  key={r.roundNumber}
-                  onClick={() => setExpandedHand(expanded ? null : r.roundNumber)}
-                  className={cn(
-                    "h-fit rounded-lg border border-neutral-200 bg-neutral-50 px-3 py-3 text-left text-sm",
-                    expanded && "sm:col-span-2 lg:col-span-3"
-                  )}
-                >
-                  <div className="flex items-center justify-between">
-                    <span className="font-medium text-neutral-900">Hand #{r.roundNumber}</span>
-                    <span className="text-xs text-neutral-400">{new Date(r.playedAt).toLocaleTimeString()}</span>
-                  </div>
-                  <div className="mt-1 text-xs text-neutral-500">
-                    {CLANG_OUTCOME_LABEL[r.outcome.type]} · stake {r.stake} · eat {r.eatPaymentPerCard}/card
-                  </div>
-                  <div className="mt-2 flex flex-col gap-0.5 text-xs text-neutral-500">
-                    {netEntries.map(({ player, net }) => (
-                      <span key={player.seatIndex}>
-                        <span className="text-neutral-700">{player.displayName ?? `Seat ${player.seatIndex}`}</span>{" "}
-                        <span className={cn("font-medium", net > 0 ? "text-emerald-600" : "text-red-600")}>
-                          {net > 0 ? "+" : ""}
-                          {net}
-                        </span>
-                      </span>
-                    ))}
-                  </div>
+            {data.hands.length === 0 && data.clangRounds.length === 0 && data.cardFlipRounds.length === 0 && (
+              <p className="text-sm text-neutral-400">No hands played yet.</p>
+            )}
+            {[...mergeLog(data)].reverse().map((item) => {
+              const expanded = expandedHand === item.number;
+              const toggle = () => setExpandedHand(expanded ? null : item.number);
 
-                  {expanded && (
-                    <div className="mt-3 grid grid-cols-1 gap-3 border-t border-neutral-200 pt-3 sm:grid-cols-2 lg:grid-cols-4">
-                      {r.players.map((p) => (
-                        <div key={p.seatIndex}>
-                          <div className="text-[10px] font-semibold uppercase tracking-wide text-neutral-400">
-                            {p.displayName ?? `Seat ${p.seatIndex}`} · value {p.handValue}
-                          </div>
-                          <div className="mt-1 flex gap-1">
-                            {p.hand.map((c, i) => (
-                              <PlayingCard key={i} card={c} small />
-                            ))}
-                          </div>
-                        </div>
-                      ))}
-                      {r.bonusHits.length > 0 && (
-                        <div className="sm:col-span-2 lg:col-span-4">
-                          <div className="text-[10px] font-semibold uppercase tracking-wide text-neutral-400">Bonus hits</div>
-                          <div className="mt-1 flex flex-col gap-0.5 text-xs text-neutral-600">
-                            {r.bonusHits.map((b, i) => (
-                              <span key={i}>
-                                {r.players.find((p) => p.seatIndex === b.seatIndex)?.displayName ?? `Seat ${b.seatIndex}`} hit {b.category} — paid{" "}
-                                {b.payout} by everyone
-                              </span>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </button>
-              );
-            })}
-          </div>
-        )}
-
-        {!loading && data && tab === "log" && gameKind !== "clang" && (
-          <div className="grid min-h-0 flex-1 grid-cols-1 gap-3 overflow-y-auto sm:grid-cols-2 lg:grid-cols-3">
-            {data.hands.length === 0 && <p className="text-sm text-neutral-400">No hands played yet.</p>}
-            {[...data.hands].reverse().map((h) => {
-              const nets = netsBySeat(h);
-              const netEntries = h.players
-                .map((p) => ({ player: p, net: nets.get(p.seatIndex) ?? 0 }))
-                .filter(({ player, net }) => net !== 0 || player.totalContributed > 0)
-                .sort((a, b) => b.net - a.net);
-              const expanded = expandedHand === h.handNumber;
-              const streets = actionsByStreet(h.actions);
-              return (
-                <button
-                  key={h.handNumber}
-                  onClick={() => setExpandedHand(expanded ? null : h.handNumber)}
-                  className={cn(
-                    "h-fit rounded-lg border border-neutral-200 bg-neutral-50 px-3 py-3 text-left text-sm",
-                    expanded && "sm:col-span-2 lg:col-span-3"
-                  )}
-                >
-                  <div className="flex items-center justify-between">
-                    <span className="font-medium text-neutral-900">Hand #{h.handNumber}</span>
-                    <span className="text-xs text-neutral-400">{new Date(h.playedAt).toLocaleTimeString()}</span>
-                  </div>
-                  <div className="mt-2 flex gap-1">
-                    {h.board.map((c, i) => (
-                      <PlayingCard key={i} card={c} small />
-                    ))}
-                  </div>
-                  <div className="mt-2 flex flex-col gap-0.5 text-xs text-neutral-500">
-                    {netEntries.filter(({ net }) => net > 0).map(({ player, net }) => (
-                      <span key={player.seatIndex}>
-                        <span className="text-neutral-700">{player.displayName ?? `Seat ${player.seatIndex}`}</span>{" "}
-                        <span className="font-medium text-emerald-600">+{net}</span>
-                      </span>
-                    ))}
-                  </div>
-
-                  {expanded && (
-                    <div className="mt-3 grid grid-cols-1 gap-3 border-t border-neutral-200 pt-3 sm:grid-cols-2 lg:grid-cols-4">
-                      {streets.map(([streetName, actions]) => (
-                        <div key={streetName}>
-                          <div className="text-[10px] font-semibold uppercase tracking-wide text-neutral-400">{streetName}</div>
-                          <div className="mt-1 flex flex-col gap-0.5 text-xs text-neutral-600">
-                            {actions.map((a, i) => {
-                              const player = h.players.find((p) => p.seatIndex === a.seatIndex);
-                              return (
-                                <span key={i}>
-                                  <span className="text-neutral-800">{player?.displayName ?? `Seat ${a.seatIndex}`}</span>{" "}
-                                  {actionLabel(a)}
-                                </span>
-                              );
-                            })}
-                          </div>
-                        </div>
-                      ))}
-                      {streets.length === 0 && <p className="text-xs text-neutral-400">No betting action this hand.</p>}
-                    </div>
-                  )}
-                </button>
-              );
+              if (item.kind === "clang") {
+                return <ClangRoundLogCard key={`clang-${item.round.roundNumber}`} round={item.round} expanded={expanded} onToggle={toggle} />;
+              }
+              if (item.kind === "cardflip") {
+                return (
+                  <CardFlipRoundLogCard key={`cardflip-${item.round.roundNumber}`} round={item.round} expanded={expanded} onToggle={toggle} />
+                );
+              }
+              return <HandLogCard key={`poker-${item.hand.handNumber}`} hand={item.hand} expanded={expanded} onToggle={toggle} />;
             })}
           </div>
         )}

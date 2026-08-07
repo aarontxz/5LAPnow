@@ -22,6 +22,7 @@
     "@5lapnow/cards": "workspace:*",
     "@5lapnow/game-engine": "workspace:*",
     "@5lapnow/clang-engine": "workspace:*",
+    "@5lapnow/card-flip-engine": "workspace:*",
     "@5lapnow/shared-types": "workspace:*",
     "@prisma/client": "^5.20.0",
     "cookie-parser": "^1.4.7",

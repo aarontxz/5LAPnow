@@ -32,6 +32,7 @@ enum GameDefinitionSource {
 enum GameEngine {
   poker
   clang
+  cardflip
 }
 
 model GameDefinition {
@@ -101,6 +102,7 @@ model Table {
   seats            Seat[]
   hands            Hand[]
   clangRounds      ClangRound[]
+  cardFlipRounds   CardFlipRound[]
   chipTransactions ChipTransaction[]
 }
 
@@ -131,6 +133,8 @@ model Hand {
   gameDefinition   GameDefinition @relation(fields: [gameDefinitionId], references: [id])
   handNumber       Int
   board            Json
+  /// Card[][] per board, only populated for multi-board (double/triple board bomb pot) hands.
+  boards           Json?
   /// Serialized ShowdownResult (pots, winners) from @5lapnow/game-engine.
   results          Json
   /// Snapshot of {seatIndex, userId, displayName, totalContributed} at the time this hand was played,
@@ -160,6 +164,25 @@ model ClangRound {
   /// Ordered ClangActionLogEntry[] (deal/bonus/play/eat/eatDeclined/draw/callClangInstant/callClang/forcedShowdown)
   actions           Json     @default("[]")
   playedAt    DateTime @default(now())
+}
+
+/// "10 Card Flip" round history, parallel to ClangRound — three shared draw piles,
+/// players take turns drawing one card each until everyone holds `cardsPerPlayer`
+/// cards, then the best 5-card poker hand wins the stake from every other player.
+model CardFlipRound {
+  id             String   @id @default(uuid())
+  tableId        String
+  table          Table    @relation(fields: [tableId], references: [id])
+  roundNumber    Int
+  stake          Int
+  cardsPerPlayer Int
+  /// { winnerSeatIndices: number[], payments: [{fromSeatIndex,toSeatIndex,amount}] }
+  outcome        Json
+  /// Snapshot of every dealt-in seat at settlement: {seatIndex, userId, displayName, hand: Card[], bestHandLabel}
+  players        Json
+  /// Ordered CardFlipActionLogEntry[] (deal/draw/complete)
+  actions        Json     @default("[]")
+  playedAt       DateTime @default(now())
 }
 
 enum ChipTransactionType {

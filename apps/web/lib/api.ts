@@ -33,7 +33,7 @@ export const api = {
     request<CreateGuestSessionResponse>("/auth/guest-session", { method: "POST", body: JSON.stringify(body) }),
   me: () => request<CreateGuestSessionResponse | null>("/auth/me"),
   listGames: (userId?: string) =>
-    request<Array<{ id: string; name: string; description: string; source: string; engine: "poker" | "clang"; definition: GameDefinition | null }>>(
+    request<Array<{ id: string; name: string; description: string; source: string; engine: "poker" | "clang" | "cardflip"; definition: GameDefinition | null }>>(
       `/games${userId ? `?userId=${encodeURIComponent(userId)}` : ""}`
     ),
   createTable: (body: CreateTableRequest) => request<TableSummary>("/tables", { method: "POST", body: JSON.stringify(body) }),

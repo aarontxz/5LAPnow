@@ -90,6 +90,7 @@ export class ClangEngine {
       phase: "instant-window",
       drawPile: deck,
       discardPile: [],
+      lastDiscardCount: 0,
       players,
       turnOrder,
       turnIndex: 0,
@@ -151,6 +152,7 @@ export class ClangEngine {
 
     player.hand = remaining;
     round.discardPile.push(...removed);
+    round.lastDiscardCount = removed.length;
     round.allowInstantClang = false;
     round.actions.push({ type: "play", seatIndex, rank, count: removed.length });
 
@@ -182,6 +184,7 @@ export class ClangEngine {
     if (removed.length === 0) throw new Error("You no longer hold a matching card");
     eater.hand = remaining;
     round.discardPile.push(...removed);
+    round.lastDiscardCount = removed.length;
 
     const amount = round.eatPaymentPerCard * removed.length;
     applyPayment(table, { fromSeatIndex: discarderSeatIndex, toSeatIndex: seatIndex, amount });

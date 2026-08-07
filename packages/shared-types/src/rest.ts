@@ -1,8 +1,9 @@
 import type { Card } from "@5lapnow/cards";
 import type { HandActionLogEntry, PotResult } from "@5lapnow/game-engine";
 import type { ClangActionLogEntry, ClangHandCategory, ClangPayment } from "@5lapnow/clang-engine";
+import type { CardFlipActionLogEntry, CardFlipPayment } from "@5lapnow/card-flip-engine";
 
-export type TableGameKind = "poker" | "clang";
+export type TableGameKind = "poker" | "clang" | "cardflip";
 
 export interface CreateGuestSessionRequest {
   /** Optional: a guest can enter the lobby with no name yet, and pick one when they first request a seat. */
@@ -47,7 +48,11 @@ export interface HandLogPlayer {
 
 export interface HandLogEntry {
   handNumber: number;
+  /** The specific poker variant this hand was played as (e.g. "No-Limit Texas Hold'em", "Double Board Bomb Pot") — a table can switch variants between hands, so this is per-hand, not table-wide. */
+  gameName: string;
   board: Card[];
+  /** Populated only for multi-board (double/triple board bomb pot) hands; null otherwise. */
+  boards: Card[][] | null;
   results: PotResult[];
   /** Who was in each seat when this hand was played, since seats can turn over later. */
   players: HandLogPlayer[];
@@ -92,9 +97,32 @@ export interface ClangRoundLogEntry {
   playedAt: string;
 }
 
+export interface CardFlipRoundLogPlayer {
+  seatIndex: number;
+  userId: string | null;
+  displayName: string | null;
+  hand: Card[];
+  bestHandLabel: string;
+}
+
+export interface CardFlipRoundLogEntry {
+  roundNumber: number;
+  stake: number;
+  cardsPerPlayer: number;
+  outcome: {
+    winnerSeatIndices: number[];
+    payments: CardFlipPayment[];
+  };
+  players: CardFlipRoundLogPlayer[];
+  actions: CardFlipActionLogEntry[];
+  playedAt: string;
+}
+
 export interface TableLedgerResponse {
   hands: HandLogEntry[];
   /** Empty for poker tables. */
   clangRounds: ClangRoundLogEntry[];
+  /** Empty for non-Card-Flip tables. */
+  cardFlipRounds: CardFlipRoundLogEntry[];
   players: PlayerLedgerEntry[];
 }

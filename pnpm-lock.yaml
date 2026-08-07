@@ -17,6 +17,9 @@ importers:
 
   apps/server:
     dependencies:
+      '@5lapnow/card-flip-engine':
+        specifier: workspace:*
+        version: link:../../packages/card-flip-engine
       '@5lapnow/cards':
         specifier: workspace:*
         version: link:../../packages/cards
@@ -149,6 +152,22 @@ importers:
         specifier: ^5
         version: 5.9.3
 
+  packages/card-flip-engine:
+    dependencies:
+      '@5lapnow/cards':
+        specifier: workspace:*
+        version: link:../cards
+      '@5lapnow/game-engine':
+        specifier: workspace:*
+        version: link:../game-engine
+    devDependencies:
+      typescript:
+        specifier: ^5.6.3
+        version: 5.9.3
+      vitest:
+        specifier: ^2.1.4
+        version: 2.1.9(@types/node@22.20.1)(lightningcss@1.32.0)(terser@5.49.2)
+
   packages/cards:
     devDependencies:
       typescript:
@@ -192,6 +211,9 @@ importers:
 
   packages/shared-types:
     dependencies:
+      '@5lapnow/card-flip-engine':
+        specifier: workspace:*
+        version: link:../card-flip-engine
       '@5lapnow/cards':
         specifier: workspace:*
         version: link:../cards

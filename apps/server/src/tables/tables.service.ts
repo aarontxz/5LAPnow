@@ -12,6 +12,7 @@ import {
 } from "@5lapnow/game-engine";
 import type { Card } from "@5lapnow/cards";
 import type {
+  CardFlipRoundLogEntry,
   ClangRoundLogEntry,
   CreateTableRequest,
   HandLogEntry,
@@ -44,13 +45,25 @@ export class TablesService implements OnModuleInit {
    * had going into that hand, as if it never happened.
    */
   async onModuleInit(): Promise<void> {
-    const [rows, handCounts, clangRoundCounts] = await Promise.all([
+    const [rows, handCounts, clangRoundCounts, cardFlipRoundCounts] = await Promise.all([
       this.prisma.table.findMany({ include: { seats: { include: { user: true } }, owner: true, gameDefinition: true } }),
       this.prisma.hand.groupBy({ by: ["tableId"], _max: { handNumber: true } }),
       this.prisma.clangRound.groupBy({ by: ["tableId"], _max: { roundNumber: true } }),
+      this.prisma.cardFlipRound.groupBy({ by: ["tableId"], _max: { roundNumber: true } }),
     ]);
-    const maxHandNumberByTable = new Map(handCounts.map((h) => [h.tableId, h._max.handNumber ?? 0]));
-    const maxRoundNumberByTable = new Map(clangRoundCounts.map((r) => [r.tableId, r._max.roundNumber ?? 0]));
+    // Hand/round numbers share one sequence across all engines, so the resumed
+    // counter must be the max of whichever engine was played most recently at
+    // that table, not the max within one engine alone.
+    const maxGameNumberByTable = new Map<string, number>();
+    for (const h of handCounts) {
+      maxGameNumberByTable.set(h.tableId, Math.max(maxGameNumberByTable.get(h.tableId) ?? 0, h._max.handNumber ?? 0));
+    }
+    for (const r of clangRoundCounts) {
+      maxGameNumberByTable.set(r.tableId, Math.max(maxGameNumberByTable.get(r.tableId) ?? 0, r._max.roundNumber ?? 0));
+    }
+    for (const r of cardFlipRoundCounts) {
+      maxGameNumberByTable.set(r.tableId, Math.max(maxGameNumberByTable.get(r.tableId) ?? 0, r._max.roundNumber ?? 0));
+    }
 
     for (const row of rows) {
       const gameKind = row.gameDefinition.engine;
@@ -93,12 +106,12 @@ export class TablesService implements OnModuleInit {
         gameDefinition,
         table,
         hand: null,
-        handCounter: maxHandNumberByTable.get(row.id) ?? 0,
         // Any hand/round in progress at restart time is unrecoverable (live
         // deal state is never persisted) and is simply dropped, mirroring the
-        // same precedent for both game kinds.
+        // same precedent across every game kind.
         clangRound: null,
-        clangRoundCounter: maxRoundNumberByTable.get(row.id) ?? 0,
+        cardFlipRound: null,
+        gameCounter: maxGameNumberByTable.get(row.id) ?? 0,
         clangLastStake: null,
         clangLastEatPaymentPerCard: null,
         pendingRequests: [],
@@ -158,9 +171,9 @@ export class TablesService implements OnModuleInit {
       gameDefinition,
       table: createEmptyTable(config),
       hand: null,
-      handCounter: 0,
       clangRound: null,
-      clangRoundCounter: 0,
+      cardFlipRound: null,
+      gameCounter: 0,
       clangLastStake: null,
       clangLastEatPaymentPerCard: null,
       pendingRequests: [],
@@ -341,11 +354,11 @@ export class TablesService implements OnModuleInit {
     this.emitChanged(tableId);
   }
 
-  /** True if a poker hand or Clang round is currently live (not just dealt-and-settled) at this table. */
+  /** True if a poker hand, Clang round, or Card Flip round is currently live (not just dealt-and-settled) at this table. */
   isRoundInProgress(runtime: RuntimeTable): boolean {
-    return runtime.gameKind === "poker"
-      ? runtime.hand !== null && runtime.hand.phase !== "complete"
-      : runtime.clangRound !== null && runtime.clangRound.phase !== "complete";
+    if (runtime.gameKind === "poker") return runtime.hand !== null && runtime.hand.phase !== "complete";
+    if (runtime.gameKind === "clang") return runtime.clangRound !== null && runtime.clangRound.phase !== "complete";
+    return runtime.cardFlipRound !== null && runtime.cardFlipRound.phase !== "complete";
   }
 
   private async clearSeat(runtime: RuntimeTable, seatIndex: number, userId: string): Promise<void> {
@@ -380,7 +393,10 @@ export class TablesService implements OnModuleInit {
    * Marks a seated player away (or back active). Sitting-out seats keep their
    * stack but are skipped when the next hand is dealt (DeclarativeEngine only
    * deals `activeSeats`) — safe to flip anytime since it never touches a hand
-   * already in progress.
+   * already in progress. If they're already dealt into a hand that's live
+   * right now, `advanceHand` will auto-check/fold through their turns for the
+   * rest of that hand (see its `shouldAutoPlay`) so they never stall it —
+   * including immediately, if it's their turn the moment they go away.
    */
   async setSeatAway(tableId: string, seatIndex: number, requesterUserId: string, away: boolean): Promise<void> {
     const runtime = this.getRuntimeTable(tableId);
@@ -397,6 +413,9 @@ export class TablesService implements OnModuleInit {
       data: { status: away ? "sitting_out" : "active" },
     });
 
+    if (away && runtime.gameKind === "poker") {
+      await this.advanceHand(tableId, runtime);
+    }
     this.emitChanged(tableId);
   }
 
@@ -446,8 +465,8 @@ export class TablesService implements OnModuleInit {
     });
   }
 
-  /** Poker-only: which engine the owner's next "Start" click will actually run — the queued override, or the table's current game. Drives TablesGateway's routing between startHand/ClangService.startRound. */
-  async resolveNextGameKind(tableId: string): Promise<"poker" | "clang"> {
+  /** Which engine the owner's next "Start" click will actually run — the queued override, or the table's current game. Drives TablesGateway's routing between startHand/ClangService.startRound/CardFlipService.startRound. */
+  async resolveNextGameKind(tableId: string): Promise<"poker" | "clang" | "cardflip"> {
     const runtime = this.getRuntimeTable(tableId);
     const targetId = runtime.nextGameOverride?.gameDefinitionId ?? runtime.gameDefinitionId;
     const row = await this.gamesService.getRow(targetId);
@@ -470,7 +489,7 @@ export class TablesService implements OnModuleInit {
     runtime.pendingStackAdjustments.clear();
 
     // Resolve the game for this hand: one-off override falls back to current game
-    // — which may itself be switching the table's engine (e.g. coming from Clang).
+    // — which may itself be switching the table's engine (e.g. coming from Clang or Card Flip).
     const targetGameDefinitionId = runtime.nextGameOverride?.gameDefinitionId ?? runtime.gameDefinitionId;
     runtime.nextGameOverride = null;
     const gameDefinition = await this.gamesService.getDefinition(targetGameDefinitionId);
@@ -481,12 +500,13 @@ export class TablesService implements OnModuleInit {
       runtime.gameDefinitionId = gameDefinition.id;
       runtime.gameName = gameDefinition.name;
       runtime.clangRound = null;
+      runtime.cardFlipRound = null;
       await this.prisma.table.update({ where: { id: tableId }, data: { gameDefinitionId: gameDefinition.id } });
     }
 
     const engine = new DeclarativeEngine(gameDefinition);
-    runtime.handCounter += 1;
-    runtime.hand = engine.initHand(runtime.table, runtime.handCounter);
+    runtime.gameCounter += 1;
+    runtime.hand = engine.initHand(runtime.table, runtime.gameCounter);
 
     await this.advanceHand(tableId, runtime);
     this.emitChanged(tableId);
@@ -501,38 +521,67 @@ export class TablesService implements OnModuleInit {
     this.emitChanged(tableId);
   }
 
+  /**
+   * Any seated player can rabbit hunt for themselves independently — the drawn
+   * cards are the same for everyone (drawn once, off the first requester), but
+   * `rabbitRevealedSeats` gates who actually gets to see them: `table-snapshot.ts`
+   * only includes `rabbitBoard`/`rabbitBoards` in a viewer's snapshot once their
+   * own seat is in that set.
+   */
   async revealRabbit(tableId: string, requesterUserId: string): Promise<void> {
     const runtime = this.getRuntimeTable(tableId);
     const hand = runtime.hand;
     if (!hand || hand.phase !== "complete") throw new BadRequestException("No completed hand to rabbit hunt");
-    if (hand.rabbitBoard !== null) return; // already revealed
-    if (!runtime.table.seats.some((s) => s.playerId === requesterUserId)) {
-      throw new ForbiddenException("Only seated players can reveal rabbit cards");
-    }
+    const seat = runtime.table.seats.find((s) => s.playerId === requesterUserId);
+    if (!seat) throw new ForbiddenException("Only seated players can reveal rabbit cards");
+    if (hand.rabbitRevealedSeats.has(seat.seatIndex)) return; // already revealed for this player
 
     const remainingStreets = hand.gameDefinition.streets
       .slice(hand.streetIndex + 1)
       .filter((s) => s.dealCommunityCards > 0);
     if (remainingStreets.length === 0) return; // all community cards were already dealt
 
-    const numBoards = hand.boards.length;
-    if (numBoards > 1) {
-      const rabbitBoards: Card[][] = hand.boards.map(() => []);
-      for (const street of remainingStreets) {
-        hand.deck.burn();
-        for (const board of rabbitBoards) board.push(...hand.deck.draw(street.dealCommunityCards));
+    if (hand.rabbitBoard === null) {
+      const numBoards = hand.boards.length;
+      if (numBoards > 1) {
+        const rabbitBoards: Card[][] = hand.boards.map(() => []);
+        for (const street of remainingStreets) {
+          hand.deck.burn();
+          for (const board of rabbitBoards) board.push(...hand.deck.draw(street.dealCommunityCards));
+        }
+        hand.rabbitBoards = rabbitBoards;
+        hand.rabbitBoard = rabbitBoards.flat();
+      } else {
+        const rabbitBoard: Card[] = [];
+        for (const street of remainingStreets) {
+          hand.deck.burn();
+          rabbitBoard.push(...hand.deck.draw(street.dealCommunityCards));
+        }
+        hand.rabbitBoard = rabbitBoard;
+        hand.rabbitBoards = null;
       }
-      hand.rabbitBoards = rabbitBoards;
-      hand.rabbitBoard = rabbitBoards.flat();
-    } else {
-      const rabbitBoard: Card[] = [];
-      for (const street of remainingStreets) {
-        hand.deck.burn();
-        rabbitBoard.push(...hand.deck.draw(street.dealCommunityCards));
-      }
-      hand.rabbitBoard = rabbitBoard;
-      hand.rabbitBoards = null;
     }
+    hand.rabbitRevealedSeats.add(seat.seatIndex);
+    this.emitChanged(tableId);
+  }
+
+  /**
+   * Lets a player who wasn't forced to show at showdown (won uncontested, or
+   * folded before the hand completed) voluntarily reveal their hole cards to
+   * everyone. `table-snapshot.ts` reads `HandPlayerState.shown` alongside the
+   * engine-computed `mustShowSeats` to decide who gets revealed once a hand
+   * is complete — this just flips that flag for the requester's own seat.
+   */
+  async showCards(tableId: string, requesterUserId: string): Promise<void> {
+    const runtime = this.getRuntimeTable(tableId);
+    const hand = runtime.hand;
+    if (!hand || hand.phase !== "complete") throw new BadRequestException("No completed hand to show cards for");
+    const seat = runtime.table.seats.find((s) => s.playerId === requesterUserId);
+    if (!seat) throw new ForbiddenException("Only seated players can show their cards");
+    const player = hand.players.get(seat.seatIndex);
+    if (!player) throw new BadRequestException("You were not dealt into this hand");
+    if (player.shown) return; // already shown
+    player.shown = true;
     this.emitChanged(tableId);
   }
 
@@ -551,22 +600,27 @@ export class TablesService implements OnModuleInit {
   }
 
   /**
-   * Auto-checks/folds through any seats that asked to stand up mid-hand,
-   * settles the showdown once the hand reaches it, and — once the hand is
-   * fully complete — actually evicts every seat still waiting to leave.
-   * Called after every real action and at hand start, so a deferred stand
-   * request never stalls the table waiting for a player who already left.
+   * Auto-checks/folds through any seats that asked to stand up mid-hand OR
+   * are currently marked away — an away player already dealt into this hand
+   * shouldn't be able to stall everyone else waiting on their turn — settles
+   * the showdown once the hand reaches it, and — once the hand is fully
+   * complete — actually evicts every seat still waiting to leave (away seats
+   * are only skipped for the hand, not evicted). Called after every real
+   * action and at hand start, so neither case ever stalls the table.
    */
   private async advanceHand(tableId: string, runtime: RuntimeTable): Promise<void> {
     const hand = runtime.hand;
     if (!hand || !runtime.gameDefinition) return;
     const engine = new DeclarativeEngine(runtime.gameDefinition);
 
+    const shouldAutoPlay = (seatIndex: number) =>
+      runtime.standRequests.has(seatIndex) || runtime.table.seats[seatIndex]?.status === "sitting-out";
+
     while (
       hand.phase === "betting" &&
       hand.bettingRound &&
       hand.bettingRound.turnSeatIndex !== null &&
-      runtime.standRequests.has(hand.bettingRound.turnSeatIndex)
+      shouldAutoPlay(hand.bettingRound.turnSeatIndex)
     ) {
       const seatIndex = hand.bettingRound.turnSeatIndex;
       const legal = getLegalActions(runtime.table, hand, seatIndex);
@@ -614,6 +668,7 @@ export class TablesService implements OnModuleInit {
         gameDefinitionId: runtime.gameDefinition.id,
         handNumber: hand.handNumber,
         board: JSON.parse(JSON.stringify(hand.board)),
+        boards: hand.boards.length > 1 ? JSON.parse(JSON.stringify(hand.boards)) : undefined,
         results: JSON.parse(JSON.stringify(pots)),
         players: JSON.parse(JSON.stringify(players)),
         actions: JSON.parse(JSON.stringify(hand.actions)),
@@ -643,9 +698,10 @@ export class TablesService implements OnModuleInit {
   async getLedger(tableId: string): Promise<TableLedgerResponse> {
     const runtime = this.getRuntimeTable(tableId);
 
-    const [hands, clangRounds, transactions] = await Promise.all([
-      this.prisma.hand.findMany({ where: { tableId }, orderBy: { handNumber: "asc" } }),
+    const [hands, clangRounds, cardFlipRounds, transactions] = await Promise.all([
+      this.prisma.hand.findMany({ where: { tableId }, orderBy: { handNumber: "asc" }, include: { gameDefinition: true } }),
       this.prisma.clangRound.findMany({ where: { tableId }, orderBy: { roundNumber: "asc" } }),
+      this.prisma.cardFlipRound.findMany({ where: { tableId }, orderBy: { roundNumber: "asc" } }),
       this.prisma.chipTransaction.findMany({ where: { tableId }, include: { user: true }, orderBy: { createdAt: "asc" } }),
     ]);
 
@@ -674,7 +730,9 @@ export class TablesService implements OnModuleInit {
     return {
       hands: hands.map((h) => ({
         handNumber: h.handNumber,
+        gameName: h.gameDefinition.name,
         board: h.board as unknown as HandLogEntry["board"],
+        boards: (h.boards as unknown as HandLogEntry["boards"]) ?? null,
         results: h.results as unknown as HandLogEntry["results"],
         players: h.players as unknown as HandLogEntry["players"],
         actions: h.actions as unknown as HandLogEntry["actions"],
@@ -688,6 +746,15 @@ export class TablesService implements OnModuleInit {
         bonusHits: r.bonusHits as unknown as ClangRoundLogEntry["bonusHits"],
         players: r.players as unknown as ClangRoundLogEntry["players"],
         actions: r.actions as unknown as ClangRoundLogEntry["actions"],
+        playedAt: r.playedAt.toISOString(),
+      })),
+      cardFlipRounds: cardFlipRounds.map((r) => ({
+        roundNumber: r.roundNumber,
+        stake: r.stake,
+        cardsPerPlayer: r.cardsPerPlayer,
+        outcome: r.outcome as unknown as CardFlipRoundLogEntry["outcome"],
+        players: r.players as unknown as CardFlipRoundLogEntry["players"],
+        actions: r.actions as unknown as CardFlipRoundLogEntry["actions"],
         playedAt: r.playedAt.toISOString(),
       })),
       players,

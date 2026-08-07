@@ -46,6 +46,7 @@ export function settleShowdown(table: TableState, hand: HandState): ShowdownResu
   }
 
   const revealedSeats = [...hand.players.values()].filter((p) => !p.folded).map((p) => p.seatIndex);
+  const mustShowSeats = [...new Set(pots.filter((p) => p.eligibleSeats.length > 1).flatMap((p) => p.eligibleSeats))];
 
   for (const pot of pots) {
     if (pot.eligibleSeats.length === 0) continue;
@@ -101,9 +102,11 @@ export function settleShowdown(table: TableState, hand: HandState): ShowdownResu
         const evals = pot.eligibleSeats.map((s) => ({ seatIndex: s, hand: evaluateBestHand(evalCards(s), mode) }));
         const best = evals.reduce((a, b) => (compareEvaluatedHands(b.hand, a.hand, mode) > 0 ? b : a));
         const winnerSeats = evals.filter((e) => compareEvaluatedHands(e.hand, best.hand, mode) === 0).map((e) => e.seatIndex);
-        pot.hiWinners.push(
-          ...withDescription(splitAmountEvenly(share, winnerSeats, pot.eligibleSeats), describeEvaluatedHand(best.hand, mode))
-        );
+        const boardShares = withDescription(
+          splitAmountEvenly(share, winnerSeats, pot.eligibleSeats),
+          describeEvaluatedHand(best.hand, mode)
+        ).map((s) => ({ ...s, boardIndex: bi }));
+        pot.hiWinners.push(...boardShares);
       }
     } else {
       const evals = pot.eligibleSeats.map((s) => ({ seatIndex: s, hand: evaluateBestHand(cardsFor(s), mode) }));
@@ -120,7 +123,7 @@ export function settleShowdown(table: TableState, hand: HandState): ShowdownResu
     awardChips(table, [...pot.hiWinners, ...pot.loWinners]);
   }
 
-  return { pots, revealedSeats };
+  return { pots, revealedSeats, mustShowSeats };
 }
 
 function awardChips(table: TableState, shares: PotShare[]): void {

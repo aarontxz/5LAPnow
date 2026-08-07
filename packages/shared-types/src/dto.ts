@@ -1,6 +1,7 @@
 import type { Card } from "@5lapnow/cards";
 import type { SeatStatus, HandPhase, PotResult, LegalActionInfo } from "@5lapnow/game-engine";
 import type { ClangHandCategory, ClangPayment, ClangPhase } from "@5lapnow/clang-engine";
+import type { CardFlipPayment, CardFlipPhase } from "@5lapnow/card-flip-engine";
 import type { TableGameKind } from "./rest.js";
 
 export interface PublicSeatView {
@@ -22,8 +23,12 @@ export interface HandPlayerView {
   committedThisStreet: number;
   totalContributed: number;
   holeCardCount: number;
-  /** Populated only for the viewer's own seat, or every non-folded seat once the hand is complete. */
+  /** Populated only for the viewer's own seat, or once the hand is complete: seats that were forced to show at a contested showdown, plus any seat that chose to voluntarily reveal. */
   holeCards: Card[] | null;
+  /** True only for the viewer's own seat: the hand is complete, they weren't forced to show (won uncontested or folded), and they haven't already revealed. */
+  canShow: boolean;
+  /** Live best-hand label ("Pair of Kings", "Ace High") for whichever board(s) these hole cards are being combined with — only computable once `holeCards` is visible AND at least 5 cards (hole + community) are on the table, so null preflop or whenever holeCards is hidden. */
+  handStrengthLabel: string | null;
 }
 
 export interface HandView {
@@ -103,6 +108,43 @@ export interface ClangRoundView {
   legalActions: ClangLegalActions | null;
   result: ClangResultView | null;
   drawPileCount: number;
+  /** All cards from the most recent discard (a Play or an Eat may drop more than one card at once), face-up for everyone. Empty before anything has been discarded. */
+  topDiscard: Card[];
+  discardPileCount: number;
+}
+
+export interface CardFlipPlayerView {
+  seatIndex: number;
+  handCardCount: number;
+  /** Unlike Clang/poker, every seat's hand is public in Card Flip — you need to see the leader's hand to know what you have to beat. */
+  hand: Card[];
+  /** Best-hand label ("Pair of Kings", "Ace High") for this seat's current cards — works below 5 cards, unlike poker. Null only before the first card is drawn. */
+  handStrengthLabel: string | null;
+}
+
+export interface CardFlipLegalActions {
+  canDraw: boolean;
+}
+
+export interface CardFlipResultView {
+  winnerSeatIndices: number[];
+  payments: CardFlipPayment[];
+}
+
+export interface CardFlipRoundView {
+  roundNumber: number;
+  stake: number;
+  cardsPerPlayer: number;
+  phase: CardFlipPhase;
+  turnSeatIndex: number | null;
+  /** Whoever currently holds the strongest hand at the table — the target the current turn's player must beat. Null only before anyone has drawn enough cards to be evaluated. */
+  leaderSeatIndex: number | null;
+  /** Card counts remaining in each of the 3 shared draw piles. */
+  pileCounts: number[];
+  players: CardFlipPlayerView[];
+  /** Populated only for the viewer when they're seated in this round. */
+  legalActions: CardFlipLegalActions | null;
+  result: CardFlipResultView | null;
 }
 
 export interface TableSnapshot {
@@ -126,4 +168,5 @@ export interface TableSnapshot {
   /** Prefill hints for the owner's next "Deal" form, from the last round dealt at this table. */
   clangLastStake: number | null;
   clangLastEatPaymentPerCard: number | null;
+  cardFlipRound: CardFlipRoundView | null;
 }

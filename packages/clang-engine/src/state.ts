@@ -59,6 +59,8 @@ export interface ClangRoundState {
   phase: ClangPhase;
   drawPile: Card[];
   discardPile: Card[];
+  /** Number of cards from the tail of `discardPile` that belong to the most recent discard (a Play or an Eat) — lets viewers see the whole batch, not just one card. */
+  lastDiscardCount: number;
   players: ClangPlayerState[];
   /** Seat indices in play order for this round, starting at the button. Fixed for the whole round. */
   turnOrder: number[];

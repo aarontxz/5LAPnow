@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 
 export interface GameOption {
@@ -23,6 +23,17 @@ export function GameSelect({
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   const selected = games.find((g) => g.id === value);
+
+  // Tapping/clicking anywhere outside this picker closes it — every dropdown/
+  // modal in the app should behave this way (see CLAUDE.md).
+  useEffect(() => {
+    if (!open) return;
+    function onPointerDown(e: PointerEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    }
+    document.addEventListener("pointerdown", onPointerDown);
+    return () => document.removeEventListener("pointerdown", onPointerDown);
+  }, [open]);
 
   return (
     <div ref={ref} className={`relative ${className ?? "flex-1"}`}>
@@ -62,7 +73,7 @@ export function GameSelect({
                   >
                     <span className={`mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full ${isActive ? "bg-emerald-400" : "bg-white/20"}`} />
                     <div className="min-w-0">
-                      <p className="truncate text-sm font-medium">{g.name}</p>
+                      <p className="text-sm font-medium">{g.name}</p>
                       {g.description && (
                         <p className="mt-0.5 text-[11px] leading-snug text-white/40 line-clamp-2">{g.description}</p>
                       )}

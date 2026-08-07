@@ -8,6 +8,37 @@
 			"problemMatcher": [],
 			"label": "npm: build",
 			"detail": "turbo run build"
+		},
+		{
+			"type": "npm",
+			"script": "dev",
+			"problemMatcher": [],
+			"label": "run",
+			"detail": "pnpm dev (turbo run dev)",
+			"isBackground": true
+		},
+		{
+			"type": "npm",
+			"script": "prisma:generate",
+			"path": "apps/server",
+			"problemMatcher": [],
+			"label": "prisma: generate",
+			"detail": "pnpm --filter @5lapnow/server prisma:generate"
+		},
+		{
+			"type": "npm",
+			"script": "prisma:migrate",
+			"path": "apps/server",
+			"problemMatcher": [],
+			"label": "prisma: migrate",
+			"detail": "pnpm --filter @5lapnow/server prisma:migrate"
+		},
+		{
+			"type": "shell",
+			"command": "kill -9 $(lsof -ti:4001)",
+			"problemMatcher": [],
+			"label": "kill 4001",
+			"detail": "kill -9 $(lsof -ti:4001)"
 		}
 	]
 }

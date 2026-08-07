@@ -3,12 +3,17 @@
 import { motion } from "framer-motion";
 import type { Card } from "@5lapnow/cards";
 import type { ClangLegalActions } from "@5lapnow/shared-types";
-import { PlayingCard } from "./PlayingCard";
+import { PlayingCard } from "../PlayingCard";
 
 const RANK_LABELS: Record<number, string> = { 11: "J", 12: "Q", 13: "K", 14: "A" };
 
 function rankLabel(rank: number): string {
   return RANK_LABELS[rank] ?? String(rank);
+}
+
+/** Clang scores Ace as the lowest card (1 point) — sort it before 2 instead of after King. */
+function clangSortOrder(rank: number): number {
+  return rank === 14 ? 1 : rank;
 }
 
 function groupByRank(hand: Card[]): Array<{ rank: number; cards: Card[] }> {
@@ -19,7 +24,7 @@ function groupByRank(hand: Card[]): Array<{ rank: number; cards: Card[] }> {
     byRank.set(card.rank, list);
   }
   return Array.from(byRank.entries())
-    .sort((a, b) => a[0] - b[0])
+    .sort((a, b) => clangSortOrder(a[0]) - clangSortOrder(b[0]))
     .map(([rank, cards]) => ({ rank, cards }));
 }
 

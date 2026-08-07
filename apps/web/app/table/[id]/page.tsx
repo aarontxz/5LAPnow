@@ -7,10 +7,10 @@ import { saveSession, type Session } from "@/lib/session";
 import { api } from "@/lib/api";
 import { useTableSocket } from "@/lib/useTableSocket";
 import { SeatView } from "@/components/table/SeatView";
-import { ClangSeatView } from "@/components/table/ClangSeatView";
-import { ClangActionPanel } from "@/components/table/ClangActionPanel";
+import { ClangActionPanel } from "@/components/table/clang/ClangActionPanel";
+import { CardFlipActionPanel } from "@/components/table/cardflip/CardFlipActionPanel";
 import { PlayingCard } from "@/components/table/PlayingCard";
-import { ActionControls } from "@/components/table/ActionControls";
+import { ActionControls } from "@/components/table/poker/ActionControls";
 import { AnimatedNumber } from "@/components/table/AnimatedNumber";
 import { LedgerModal } from "@/components/table/LedgerModal";
 import { NextGamePicker } from "@/components/table/NextGamePicker";
@@ -49,11 +49,13 @@ export default function TablePage({ params }: { params: Promise<{ id: string }> 
     setNextGame,
     sendAction,
     revealRabbit,
+    showCards,
     clangPlay,
     clangEat,
     clangPassEat,
     clangCallClang,
     clangCallClangInstant,
+    cardFlipDraw,
   } = useTableSocket(readyTableId);
 
   // Validate the cookie before opening the socket — stale localStorage with an
@@ -116,14 +118,30 @@ export default function TablePage({ params }: { params: Promise<{ id: string }> 
   const boards = hand?.boards ?? null;
   const rabbitBoard = hand?.rabbitBoard ?? null;
   const rabbitBoards = hand?.rabbitBoards ?? null;
+  // Undealt slots stay clickable (per-viewer — others can't tell you've peeked) until
+  // this viewer has rabbit hunted for themselves or the hand didn't reach a missed street.
+  const canRabbitHunt =
+    !!mySeat &&
+    hand?.phase === "complete" &&
+    rabbitBoard === null &&
+    (boards ? boards.some((b) => b.length < 5) : board.length < 5);
   const legalActions = hand?.legalActions ?? null;
   const activeSeats = snapshot?.seats.filter((s) => s.status === "active").length ?? 0;
+  // The middle pot display breaks out only the latest/current bet — every other
+  // live bet this street (calls, earlier limps) is folded into the "before" number.
+  const currentBet = !isComplete && hand ? hand.players.reduce((max, p) => Math.max(max, p.committedThisStreet), 0) : 0;
+  const potBeforeStreet = displayPot - currentBet;
 
   const isClang = snapshot?.gameKind === "clang";
   const clangRound = snapshot?.clangRound ?? null;
   const clangRoundActive = clangRound !== null && clangRound.phase !== "complete";
   const myClangPlayer = clangRound?.players.find((p) => p.seatIndex === mySeatIndex);
   const clangPayments = clangRound?.result?.payments ?? [];
+
+  const isCardFlip = snapshot?.gameKind === "cardflip";
+  const cardFlipRound = snapshot?.cardFlipRound ?? null;
+  const cardFlipRoundActive = cardFlipRound !== null && cardFlipRound.phase !== "complete";
+  const cardFlipPayments = cardFlipRound?.result?.payments ?? [];
 
   async function copyShareLink() {
     const url = `${window.location.origin}/table/${tableId}`;
@@ -145,7 +163,7 @@ export default function TablePage({ params }: { params: Promise<{ id: string }> 
   }
 
   return (
-    <main className="relative flex flex-1 flex-col overflow-hidden px-2 py-2 pb-20 sm:px-6 sm:py-6 sm:pb-6">
+    <main className="relative flex h-dvh flex-1 flex-col overflow-y-auto px-2 py-2 sm:px-6 sm:py-6">
       <header className="flex items-start justify-between gap-2">
         <div className="flex items-center gap-2">
           <motion.button
@@ -198,10 +216,11 @@ export default function TablePage({ params }: { params: Promise<{ id: string }> 
 
       {error && <p className="text-center text-sm text-red-400">{error}</p>}
 
-      {/* This wrapper absorbs all remaining space; the table itself has a fixed
-          intrinsic size (via max-w + aspect-ratio) so nothing that appears or
-          disappears around it — action buttons, errors — ever resizes it. */}
-      <div className="flex flex-1 items-center justify-center">
+      {/* The felt and the action panel below are true siblings in normal
+          document flow — never a fixed overlay on top of the felt — so on a
+          short viewport the page scrolls instead of the panel covering the
+          viewer's own seat. */}
+      <div className="flex min-h-0 flex-1 items-center justify-center py-2">
         <div className="relative aspect-[5/7] w-full max-w-md rounded-2xl border border-emerald-900/50 bg-gradient-to-b from-emerald-950 to-emerald-900 shadow-2xl sm:aspect-[5/6] sm:max-w-2xl">
           <div className="absolute left-1/2 top-1/2 flex -translate-x-1/2 -translate-y-1/2 flex-col items-center gap-1 sm:gap-2">
             {isClang ? (
@@ -222,10 +241,22 @@ export default function TablePage({ params }: { params: Promise<{ id: string }> 
                 {clangRound?.phase === "instant-window" && (
                   <span className="text-[10px] text-amber-300 sm:text-xs">Anyone with exactly 21 can call Clang!</span>
                 )}
-                {clangRound?.phase === "awaiting-eat" && clangRound.pendingEat && (
-                  <span className="text-[10px] text-amber-300 sm:text-xs">
-                    {snapshot?.seats.find((s) => s.seatIndex === clangRound.pendingEat!.eaterSeatIndex)?.displayName ?? "Someone"} can eat!
-                  </span>
+                {clangRound?.phase === "awaiting-eat" &&
+                  clangRound.pendingEat &&
+                  clangRound.pendingEat.eaterSeatIndex === mySeatIndex && (
+                    <span className="text-[10px] text-amber-300 sm:text-xs">You can eat!</span>
+                  )}
+                {clangRound && clangRound.topDiscard.length > 0 && (
+                  <div className="flex flex-col items-center gap-0.5">
+                    <div className="flex gap-0.5 sm:gap-1">
+                      {clangRound.topDiscard.map((c, i) => (
+                        <PlayingCard key={`discard-${i}-${c.rank}-${c.suit}`} card={c} small dealDelay={i * 0.08} />
+                      ))}
+                    </div>
+                    <span className="text-[9px] text-white/40 sm:text-[10px]">
+                      Discard{clangRound.discardPileCount > clangRound.topDiscard.length ? ` (${clangRound.discardPileCount})` : ""}
+                    </span>
+                  </div>
                 )}
                 <AnimatePresence>
                   {clangRound?.phase === "complete" && clangRound.result && (
@@ -249,6 +280,53 @@ export default function TablePage({ params }: { params: Promise<{ id: string }> 
                   )}
                 </AnimatePresence>
               </>
+            ) : isCardFlip ? (
+              <>
+                <div className="flex flex-col items-center gap-0.5">
+                  <p className="text-[11px] font-semibold text-white/60 sm:text-xs">10 Card Flip</p>
+                  {snapshot?.ownerDisplayName && (
+                    <p className="text-[10px] text-amber-200/60">
+                      <span aria-hidden>👑</span> {snapshot.ownerDisplayName}
+                    </p>
+                  )}
+                </div>
+                {cardFlipRound && (
+                  <span className="rounded-full bg-black/40 px-3 py-1 text-xs text-white/70 sm:text-sm">
+                    Stake {cardFlipRound.stake} · beat the leader (max {cardFlipRound.cardsPerPlayer} cards)
+                  </span>
+                )}
+                {cardFlipRound && cardFlipRound.phase === "turn" && (
+                  <div className="flex items-center justify-center gap-2">
+                    {cardFlipRound.pileCounts.map((count, i) => (
+                      <div key={i} className="flex flex-col items-center gap-0.5">
+                        <PlayingCard card={null} small />
+                        <span className="text-[9px] text-white/40 sm:text-[10px]">{count} left</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                <AnimatePresence>
+                  {cardFlipRound?.phase === "complete" && cardFlipRound.result && (
+                    <motion.div
+                      key={`cardflip-result-${cardFlipRound.roundNumber}`}
+                      initial={{ opacity: 0, y: -4 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, y: -4 }}
+                      transition={{ duration: 0.25 }}
+                      className="flex flex-col items-center gap-0.5"
+                    >
+                      {cardFlipRound.result.winnerSeatIndices.map((seatIndex) => {
+                        const winnerSeat = snapshot?.seats.find((s) => s.seatIndex === seatIndex);
+                        return (
+                          <span key={seatIndex} className="text-[10px] text-emerald-300 sm:text-xs">
+                            {winnerSeat?.displayName ?? `Seat ${seatIndex}`} wins
+                          </span>
+                        );
+                      })}
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </>
             ) : boards ? (
               <div className="flex flex-col gap-1">
                 {boards.map((b, bi) => (
@@ -261,9 +339,18 @@ export default function TablePage({ params }: { params: Promise<{ id: string }> 
                         <PlayingCard card={c} small dealDelay={i * 0.08} />
                       </div>
                     ))}
-                    {Array.from({ length: 5 - b.length - (rabbitBoards?.[bi]?.length ?? 0) }).map((_, i) => (
-                      <div key={`ph-${i}`} className="h-11 w-8 rounded-md border border-dashed border-white/10 sm:h-14 sm:w-10" />
-                    ))}
+                    {Array.from({ length: 5 - b.length - (rabbitBoards?.[bi]?.length ?? 0) }).map((_, i) =>
+                      canRabbitHunt ? (
+                        <button
+                          key={`ph-${i}`}
+                          onClick={revealRabbit}
+                          title="Rabbit hunt: see the cards that would have come, just for you"
+                          className="h-11 w-8 rounded-md border border-dashed border-amber-200/40 bg-amber-200/5 transition hover:border-amber-200/70 hover:bg-amber-200/10 sm:h-14 sm:w-10"
+                        />
+                      ) : (
+                        <div key={`ph-${i}`} className="h-11 w-8 rounded-md border border-dashed border-white/10 sm:h-14 sm:w-10" />
+                      )
+                    )}
                   </div>
                 ))}
               </div>
@@ -277,15 +364,32 @@ export default function TablePage({ params }: { params: Promise<{ id: string }> 
                     <PlayingCard card={c} small dealDelay={i * 0.08} />
                   </div>
                 ))}
-                {Array.from({ length: 5 - board.length - (rabbitBoard?.length ?? 0) }).map((_, i) => (
-                  <div key={`ph-${i}`} className="h-11 w-8 rounded-md border border-dashed border-white/10 sm:h-14 sm:w-10" />
-                ))}
+                {Array.from({ length: 5 - board.length - (rabbitBoard?.length ?? 0) }).map((_, i) =>
+                  canRabbitHunt ? (
+                    <button
+                      key={`ph-${i}`}
+                      onClick={revealRabbit}
+                      title="Rabbit hunt: see the cards that would have come, just for you"
+                      className="h-11 w-8 rounded-md border border-dashed border-amber-200/40 bg-amber-200/5 transition hover:border-amber-200/70 hover:bg-amber-200/10 sm:h-14 sm:w-10"
+                    />
+                  ) : (
+                    <div key={`ph-${i}`} className="h-11 w-8 rounded-md border border-dashed border-white/10 sm:h-14 sm:w-10" />
+                  )
+                )}
               </div>
             )}
-            {!isClang && (
+            {!isClang && !isCardFlip && (
               <>
                 <span className="rounded-full bg-black/40 px-3 py-1 text-xs text-white/70 sm:text-sm">
-                  Pot: <AnimatedNumber value={displayPot} />
+                  Pot: <AnimatedNumber value={potBeforeStreet} />
+                  {currentBet > 0 && (
+                    <>
+                      {" + "}
+                      <AnimatedNumber value={currentBet} />
+                      {" = "}
+                      <AnimatedNumber value={displayPot} />
+                    </>
+                  )}
                 </span>
                 <div className="flex flex-col items-center gap-0.5">
                   <p className="text-[11px] font-semibold text-white/60 sm:text-xs">{snapshot?.gameName}</p>
@@ -378,25 +482,43 @@ export default function TablePage({ params }: { params: Promise<{ id: string }> 
                 style={pos}
               >
                 {isClang ? (
-                  <ClangSeatView
+                  <SeatView
                     {...commonProps}
-                    clangPlayer={clangRound?.players.find((p) => p.seatIndex === seat.seatIndex)}
                     isTurn={clangRound?.turnSeatIndex === seat.seatIndex}
-                    isEatCandidate={clangRound?.pendingEat?.eaterSeatIndex === seat.seatIndex}
-                    isDiscarder={clangRound?.pendingEat?.discarderSeatIndex === seat.seatIndex}
                     roundInProgress={clangRoundActive}
                     winAmount={clangRound?.phase === "complete" ? netForSeat(clangPayments, seat.seatIndex) : undefined}
+                    game={{
+                      kind: "clang",
+                      clangPlayer: clangRound?.players.find((p) => p.seatIndex === seat.seatIndex),
+                      isEatCandidate: seat.seatIndex === mySeatIndex && clangRound?.pendingEat?.eaterSeatIndex === seat.seatIndex,
+                      isDiscarder: clangRound?.pendingEat?.discarderSeatIndex === seat.seatIndex,
+                    }}
+                  />
+                ) : isCardFlip ? (
+                  <SeatView
+                    {...commonProps}
+                    isTurn={cardFlipRound?.turnSeatIndex === seat.seatIndex}
+                    roundInProgress={cardFlipRoundActive}
+                    winAmount={cardFlipRound?.phase === "complete" ? netForSeat(cardFlipPayments, seat.seatIndex) : undefined}
+                    game={{
+                      kind: "cardflip",
+                      cardFlipPlayer: cardFlipRound?.players.find((p) => p.seatIndex === seat.seatIndex),
+                    }}
                   />
                 ) : (
                   <SeatView
                     {...commonProps}
-                    handPlayer={hand?.players.find((p) => p.seatIndex === seat.seatIndex)}
-                    isButton={snapshot.buttonSeatIndex === seat.seatIndex}
                     isTurn={hand?.turnSeatIndex === seat.seatIndex}
-                    handInProgress={snapshot.handInProgress}
-                    chipDirection={chipDirection(relIndex)}
+                    roundInProgress={snapshot.handInProgress}
                     winAmount={isComplete ? winners.find((w) => w.seatIndex === seat.seatIndex)?.amount : undefined}
-                    winDescription={isComplete ? winners.find((w) => w.seatIndex === seat.seatIndex)?.description : undefined}
+                    game={{
+                      kind: "poker",
+                      handPlayer: hand?.players.find((p) => p.seatIndex === seat.seatIndex),
+                      isButton: snapshot.buttonSeatIndex === seat.seatIndex,
+                      chipDirection: chipDirection(relIndex),
+                      winDescription: isComplete ? winners.find((w) => w.seatIndex === seat.seatIndex)?.description : undefined,
+                      onShowCards: showCards,
+                    }}
                   />
                 )}
               </div>
@@ -405,10 +527,10 @@ export default function TablePage({ params }: { params: Promise<{ id: string }> 
         </div>
       </div>
 
-      {/* Fixed overlay: docked to the viewport corner, never part of the
-          table's layout flow, so the felt never jumps in size when this
-          shows, hides, or grows (e.g. the raise slider appearing). */}
-      <div className="fixed inset-x-2 bottom-4 z-40 flex flex-col items-center gap-2 sm:inset-x-auto sm:bottom-6 sm:right-6 sm:items-end">
+      {/* Normal-flow sibling below the felt — never a fixed overlay on top of
+          it, so it can never cover a seat regardless of viewport height or
+          how tall its own content gets (raise slider, wrapped play buttons). */}
+      <div className="flex shrink-0 flex-col items-center gap-2 pb-2 pt-1 sm:items-end">
         {/* One "Start" control for both engines: the dropdown lists every game
             (poker variants and Clang alike), and starting deals whichever
             engine is currently active or queued — resolved server-side. */}
@@ -446,36 +568,35 @@ export default function TablePage({ params }: { params: Promise<{ id: string }> 
               />
             )}
           </AnimatePresence>
+        ) : isCardFlip ? (
+          <AnimatePresence>
+            {mySeat && cardFlipRound && cardFlipRoundActive && (
+              <CardFlipActionPanel
+                key="cardflip-actions"
+                pileCounts={cardFlipRound.pileCounts}
+                legalActions={cardFlipRound.legalActions}
+                onDraw={cardFlipDraw}
+              />
+            )}
+          </AnimatePresence>
         ) : (
           <>
-            {/* Rabbit hunting button: visible when hand is complete but board wasn't fully dealt */}
-            <AnimatePresence>
-              {mySeat && hand?.phase === "complete" && hand.rabbitBoard === null &&
-                (hand.board.length < 5 || (hand.boards && hand.boards.some((b) => b.length < 5))) && (
-                <motion.button
-                  key="rabbit"
-                  initial={{ opacity: 0, y: 6 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: 6 }}
-                  transition={{ duration: 0.2 }}
-                  onClick={revealRabbit}
-                  className="rounded-full border border-white/20 bg-black/60 px-4 py-2 text-xs text-white/70 hover:bg-black/80 hover:text-white"
-                >
-                  🐰 See cards
-                </motion.button>
-              )}
-            </AnimatePresence>
-
             <AnimatePresence>
               {mySeat && snapshot?.handInProgress && (
-                <ActionControls key="action-controls" legalActions={legalActions} onAction={sendAction} />
+                <ActionControls
+                  key="action-controls"
+                  legalActions={legalActions}
+                  pot={hand?.pot ?? 0}
+                  currentBet={currentBet}
+                  onAction={sendAction}
+                />
               )}
             </AnimatePresence>
           </>
         )}
       </div>
 
-      <LedgerModal tableId={tableId} gameKind={snapshot?.gameKind} open={ledgerOpen} onClose={() => setLedgerOpen(false)} />
+      <LedgerModal tableId={tableId} open={ledgerOpen} onClose={() => setLedgerOpen(false)} />
     </main>
   );
 }

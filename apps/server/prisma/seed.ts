@@ -25,11 +25,24 @@ async function seedClang() {
   console.log(`Seeded builtin game definition: ${name}`);
 }
 
+async function seedCardFlip() {
+  const id = "builtin-card-flip";
+  const name = "10 Card Flip";
+  const description = "Draw one card at a time from 3 shared piles until everyone holds 10 cards — best 5-card poker hand wins the stake from everybody.";
+  await prisma.gameDefinition.upsert({
+    where: { id },
+    update: { name, description, engine: "cardflip", definition: Prisma.JsonNull },
+    create: { id, name, description, source: "builtin", engine: "cardflip", definition: Prisma.JsonNull },
+  });
+  console.log(`Seeded builtin game definition: ${name}`);
+}
+
 async function main() {
   await seedGame(NO_LIMIT_TEXAS_HOLDEM);
   await seedGame(DOUBLE_BOARD_BOMB_POT);
   await seedGame(TRIPLE_BOARD_BOMB_POT);
   await seedClang();
+  await seedCardFlip();
 }
 
 main()
