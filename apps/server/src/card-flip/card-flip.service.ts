@@ -1,5 +1,6 @@
 import { BadRequestException, ForbiddenException, Injectable } from "@nestjs/common";
-import { CardFlipEngine } from "@5lapnow/card-flip-engine";
+import { CardFlipEngine, CardFlipRoundState } from "@5lapnow/card-flip-engine";
+import { TableState } from "@5lapnow/game-engine";
 import { PrismaService } from "../prisma/prisma.service";
 import { TablesService } from "../tables/tables.service";
 import { GamesService } from "../games/games.service";
@@ -63,21 +64,60 @@ export class CardFlipService {
     runtime.gameCounter += 1;
     runtime.cardFlipRound = engine.startRound(runtime.table, runtime.gameCounter, stake, cardsPerPlayer);
 
-    await this.settleIfComplete(tableId, runtime);
-    this.tablesService.notifyChanged(tableId);
+    await this.finish(tableId, runtime);
   }
 
   async draw(tableId: string, seatIndex: number, pileIndex: number): Promise<void> {
     const runtime = this.requireCardFlipTable(tableId);
     const round = this.requireRound(runtime);
     new CardFlipEngine().draw(runtime.table, round, seatIndex, pileIndex);
-    await this.settleIfComplete(tableId, runtime);
-    this.tablesService.notifyChanged(tableId);
+    await this.finish(tableId, runtime);
   }
 
   private requireRound(runtime: RuntimeTable) {
     if (!runtime.cardFlipRound) throw new BadRequestException("No round in progress");
     return runtime.cardFlipRound;
+  }
+
+  /** Shared tail for every action: auto-draw through any away seats, settle if the round just ended, then broadcast. */
+  private async finish(tableId: string, runtime: RuntimeTable): Promise<void> {
+    this.resolveAwayTurns(runtime.table, runtime.cardFlipRound);
+    await this.settleIfComplete(tableId, runtime);
+    this.tablesService.notifyChanged(tableId);
+  }
+
+  /**
+   * Owner-only: called right when a seat is marked away, in case it's their
+   * turn right now — otherwise nobody else could act and the round would
+   * stall. Safe to call anytime; a no-op if this isn't a Card Flip table or
+   * no round is live.
+   */
+  async advanceAwaySeats(tableId: string): Promise<void> {
+    const runtime = this.tablesService.getRuntimeTable(tableId);
+    if (runtime.gameKind !== "cardflip" || !runtime.cardFlipRound) return;
+    await this.finish(tableId, runtime);
+  }
+
+  /**
+   * Auto-draws through any seat currently up whose turn is marked away, so an
+   * AFK player never stalls the table — mirrors poker's away auto-check/fold.
+   * Which pile doesn't matter (each pile is just an arbitrary slice of one
+   * shuffled deck — see the pile-choice discussion elsewhere), so this always
+   * draws from the first non-empty one; the beat-the-leader rule itself
+   * decides whether that single draw ends their turn or forces another.
+   */
+  private resolveAwayTurns(table: TableState, round: CardFlipRoundState | null): void {
+    if (!round) return;
+    const engine = new CardFlipEngine();
+    const isAway = (seatIndex: number) => table.seats[seatIndex]?.status === "sitting-out";
+
+    while (round.phase === "turn") {
+      const seatIndex = round.turnOrder[round.turnIndex] as number;
+      if (!isAway(seatIndex)) break;
+      const pileIndex = round.piles.findIndex((pile) => pile.length > 0);
+      if (pileIndex === -1) break; // no cards left anywhere; let the normal draw path surface that
+      engine.draw(table, round, seatIndex, pileIndex);
+    }
   }
 
   private async settleIfComplete(tableId: string, runtime: RuntimeTable): Promise<void> {

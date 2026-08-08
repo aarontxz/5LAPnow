@@ -161,9 +161,18 @@ export class TablesGateway implements OnGatewayInit, OnModuleInit {
 
   @SubscribeMessage("seat:setAway")
   async onSetAway(@ConnectedSocket() socket: AppSocket, @MessageBody() payload: SeatAwayPayload): Promise<void> {
-    await this.guard(socket, () =>
-      this.tablesService.setSeatAway(payload.tableId, payload.seatIndex, socket.data.userId, payload.away)
-    );
+    await this.guard(socket, async () => {
+      await this.tablesService.setSeatAway(payload.tableId, payload.seatIndex, socket.data.userId, payload.away);
+      // TablesService.setSeatAway already auto-advances poker internally (it
+      // owns that engine directly); Clang/Card Flip live in their own
+      // services to avoid a circular dependency, so triggering their
+      // equivalent auto-play here — in case it's this seat's turn/decision
+      // right now — is the gateway's job instead.
+      if (payload.away) {
+        await this.clangService.advanceAwaySeats(payload.tableId);
+        await this.cardFlipService.advanceAwaySeats(payload.tableId);
+      }
+    });
   }
 
   @SubscribeMessage("table:transferOwnership")
