@@ -63,6 +63,16 @@ export interface ClangPendingEatView {
   rank: number;
 }
 
+export interface ClangLastEatView {
+  discarderSeatIndex: number;
+  eaterSeatIndex: number;
+  rank: number;
+  /** Chips paid (eatPaymentPerCard × cards eaten) — for the chip-fly animation's label. */
+  amount: number;
+  /** Position of this eat in the round's action log — increments monotonically, so the frontend can tell a repeat of the same discarder/eater/rank apart from the previous one. */
+  actionIndex: number;
+}
+
 export interface ClangResultView {
   type: "instant" | "call" | "forced";
   callerSeatIndex: number | null;
@@ -102,6 +112,8 @@ export interface ClangRoundView {
   phase: ClangPhase;
   turnSeatIndex: number | null;
   pendingEat: ClangPendingEatView | null;
+  /** The most recent successful Eat (any number of chained eats back), for the frontend's chip-fly/banner — null before anyone has eaten this round. */
+  lastEat: ClangLastEatView | null;
   players: ClangPlayerView[];
   bonusHits: ClangBonusHitView[];
   /** Populated only for the viewer when they're seated in this round. */

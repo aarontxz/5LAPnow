@@ -106,6 +106,16 @@ function buildClangRoundView(round: ClangRoundState, table: TableState, viewerUs
   // last drew and is now the "current" state for everyone to see.
   const lastAction = round.actions[round.actions.length - 1];
   const justDrewSeatIndex = lastAction?.type === "draw" ? lastAction.seatIndex : null;
+  const lastEat =
+    lastAction?.type === "eat"
+      ? {
+          discarderSeatIndex: lastAction.discarderSeatIndex,
+          eaterSeatIndex: lastAction.eaterSeatIndex,
+          rank: lastAction.rank,
+          amount: round.eatPaymentPerCard * lastAction.count,
+          actionIndex: round.actions.length - 1,
+        }
+      : null;
 
   const players: ClangPlayerView[] = round.players.map((p) => {
     const isOwnSeat = viewerUserId !== null && table.seats[p.seatIndex]?.playerId === viewerUserId;
@@ -150,6 +160,7 @@ function buildClangRoundView(round: ClangRoundState, table: TableState, viewerUs
     phase: round.phase,
     turnSeatIndex,
     pendingEat: round.pendingEat,
+    lastEat,
     players,
     bonusHits: round.bonusHits.map((h) => ({ seatIndex: h.seatIndex, category: h.category, payout: h.payout })),
     legalActions,

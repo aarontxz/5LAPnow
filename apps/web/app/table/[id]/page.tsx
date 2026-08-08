@@ -25,6 +25,11 @@ function netForSeat(payments: Array<{ fromSeatIndex: number; toSeatIndex: number
   return net;
 }
 
+const CLANG_RANK_LABELS: Record<number, string> = { 11: "J", 12: "Q", 13: "K", 14: "A" };
+function clangRankLabel(rank: number): string {
+  return CLANG_RANK_LABELS[rank] ?? String(rank);
+}
+
 export default function TablePage({ params }: { params: Promise<{ id: string }> }) {
   const { id: tableId } = use(params);
   const [session, setSession] = useState<Session | null>(null);
@@ -109,6 +114,19 @@ export default function TablePage({ params }: { params: Promise<{ id: string }> 
     const timer = setTimeout(() => setRevealedPile(null), CARD_FLIP_PILE_REVEAL_MS);
     return () => clearTimeout(timer);
   }, [cardFlipLastDrawnCard?.rank, cardFlipLastDrawnCard?.suit]);
+
+  // Clang: an Eat gets a banner + a chip-fly from discarder to eater, timed
+  // to fade on its own (actionIndex keeps re-triggering it, since the same
+  // discarder/eater/rank can repeat later in the round via a new chain).
+  const EAT_BANNER_MS = 1800;
+  const clangLastEat = snapshot?.clangRound?.lastEat ?? null;
+  const [activeEat, setActiveEat] = useState<NonNullable<typeof clangLastEat> | null>(null);
+  useEffect(() => {
+    if (!clangLastEat) return;
+    setActiveEat(clangLastEat);
+    const timer = setTimeout(() => setActiveEat(null), EAT_BANNER_MS);
+    return () => clearTimeout(timer);
+  }, [clangLastEat?.actionIndex]);
 
   // 's' hotkey lets the owner start a hand without reaching for the button.
   useEffect(() => {
@@ -262,6 +280,22 @@ export default function TablePage({ params }: { params: Promise<{ id: string }> 
                   clangRound.pendingEat.eaterSeatIndex === mySeatIndex && (
                     <span className="text-[10px] text-amber-300 sm:text-xs">You can eat!</span>
                   )}
+                <AnimatePresence>
+                  {activeEat && (
+                    <motion.div
+                      key={`eat-banner-${clangRound?.roundNumber}-${activeEat.actionIndex}`}
+                      initial={{ opacity: 0, scale: 0.8, y: -4 }}
+                      animate={{ opacity: 1, scale: 1, y: 0 }}
+                      exit={{ opacity: 0, scale: 0.8 }}
+                      transition={{ duration: 0.25 }}
+                      className="rounded-full bg-amber-400 px-3 py-1 text-[10px] font-bold text-black shadow-[0_0_16px_rgba(251,191,36,0.6)] sm:text-xs"
+                    >
+                      {snapshot?.seats.find((s) => s.seatIndex === activeEat.eaterSeatIndex)?.displayName ?? "Someone"} ate{" "}
+                      {snapshot?.seats.find((s) => s.seatIndex === activeEat.discarderSeatIndex)?.displayName ?? "someone"}&apos;s{" "}
+                      {clangRankLabel(activeEat.rank)}s! +{activeEat.amount}
+                    </motion.div>
+                  )}
+                </AnimatePresence>
                 {clangRound && clangRound.topDiscard.length > 0 && (
                   <div className="flex flex-col items-center gap-0.5">
                     <div className="flex gap-0.5 sm:gap-1">
@@ -471,6 +505,34 @@ export default function TablePage({ params }: { params: Promise<{ id: string }> 
                   </motion.div>
                 );
               })}
+          </AnimatePresence>
+
+          {/* Clang: a chip travels straight from the discarder's seat to the
+              eater's seat on every Eat — timed with the banner above (see
+              activeEat/EAT_BANNER_MS), so it's obvious who just paid whom. */}
+          <AnimatePresence>
+            {isClang && activeEat && (
+              <motion.div
+                key={`eat-fly-${clangRound?.roundNumber}-${activeEat.actionIndex}`}
+                initial={{
+                  left: seatPosition(relativeSeatIndex(activeEat.discarderSeatIndex, mySeatIndex)).left,
+                  top: seatPosition(relativeSeatIndex(activeEat.discarderSeatIndex, mySeatIndex)).top,
+                  opacity: 1,
+                  scale: 1,
+                }}
+                animate={{
+                  left: seatPosition(relativeSeatIndex(activeEat.eaterSeatIndex, mySeatIndex)).left,
+                  top: seatPosition(relativeSeatIndex(activeEat.eaterSeatIndex, mySeatIndex)).top,
+                  opacity: 0,
+                  scale: 0.6,
+                }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: 0.7, ease: "easeIn" }}
+                className="pointer-events-none absolute z-30 -translate-x-1/2 -translate-y-1/2 rounded-full bg-amber-400 px-2 py-1 text-[10px] font-bold text-black shadow-lg"
+              >
+                +{activeEat.amount}
+              </motion.div>
+            )}
           </AnimatePresence>
 
           {snapshot?.seats.map((seat) => {
