@@ -94,6 +94,22 @@ export default function TablePage({ params }: { params: Promise<{ id: string }> 
     setDisplayPot(hand.pot);
   }, [hand?.phase, hand?.pot, hand?.handNumber]);
 
+  // Card Flip: the pile just drawn from shows the actual card, flip-revealed,
+  // then turns back face-down BEFORE the card starts appearing in the
+  // drawer's hand (see CARD_FLIP_HAND_DELAY_MS in SeatView.tsx) — the two
+  // must never both be visible at once, or the same card reads as "in two
+  // places" for that overlapping window.
+  const CARD_FLIP_PILE_REVEAL_MS = 500;
+  const cardFlipLastDrawnCard = snapshot?.cardFlipRound?.lastDrawnCard ?? null;
+  const [revealedPile, setRevealedPile] = useState<{ pileIndex: number; card: NonNullable<typeof cardFlipLastDrawnCard> } | null>(null);
+  useEffect(() => {
+    const pileIndex = snapshot?.cardFlipRound?.lastDrawPileIndex ?? null;
+    if (pileIndex === null || !cardFlipLastDrawnCard) return;
+    setRevealedPile({ pileIndex, card: cardFlipLastDrawnCard });
+    const timer = setTimeout(() => setRevealedPile(null), CARD_FLIP_PILE_REVEAL_MS);
+    return () => clearTimeout(timer);
+  }, [cardFlipLastDrawnCard?.rank, cardFlipLastDrawnCard?.suit]);
+
   // 's' hotkey lets the owner start a hand without reaching for the button.
   useEffect(() => {
     const isOwnerNow = snapshot?.ownerId === session?.userId;
@@ -297,12 +313,22 @@ export default function TablePage({ params }: { params: Promise<{ id: string }> 
                 )}
                 {cardFlipRound && cardFlipRound.phase === "turn" && (
                   <div className="flex items-center justify-center gap-2">
-                    {cardFlipRound.pileCounts.map((count, i) => (
-                      <div key={i} className="flex flex-col items-center gap-0.5">
-                        <PlayingCard card={null} small />
-                        <span className="text-[9px] text-white/40 sm:text-[10px]">{count} left</span>
-                      </div>
-                    ))}
+                    {cardFlipRound.pileCounts.map((count, i) => {
+                      const revealedCard = revealedPile?.pileIndex === i ? revealedPile.card : null;
+                      return (
+                        <div key={i} className="flex flex-col items-center gap-0.5">
+                          {/* Keyed by the card itself (each card is drawn at most once) so
+                              PlayingCard remounts and replays its flip-in animation every
+                              time this pile is the one just drawn from. */}
+                          <PlayingCard
+                            key={revealedCard ? `${revealedCard.rank}-${revealedCard.suit}` : "back"}
+                            card={revealedCard}
+                            small
+                          />
+                          <span className="text-[9px] text-white/40 sm:text-[10px]">{count} left</span>
+                        </div>
+                      );
+                    })}
                   </div>
                 )}
                 <AnimatePresence>
@@ -470,7 +496,7 @@ export default function TablePage({ params }: { params: Promise<{ id: string }> 
               onApprove: approveRequest,
               onReject: rejectRequest,
               onCancelRequest: cancelRequest,
-              onAdjustStack: (newStack: number) => adjustStack(seat.seatIndex, newStack),
+              onAdjustStack: (mode: "add" | "remove" | "set", amount: number) => adjustStack(seat.seatIndex, mode, amount),
               onRemovePlayer: () => removePlayer(seat.seatIndex),
               onSetAway: (away: boolean) => setSeatAway(seat.seatIndex, away),
               onTransferOwnership: () => transferOwnership(seat.seatIndex),
@@ -560,6 +586,7 @@ export default function TablePage({ params }: { params: Promise<{ id: string }> 
               <ClangActionPanel
                 key="clang-actions"
                 hand={myClangPlayer?.hand ?? []}
+                handValue={myClangPlayer?.handValue ?? null}
                 legalActions={clangRound.legalActions}
                 onPlay={clangPlay}
                 onEat={clangEat}

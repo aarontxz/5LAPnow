@@ -38,7 +38,7 @@ export class ClangService {
     for (const [seatIndex, adjustment] of runtime.pendingStackAdjustments) {
       const seat = runtime.table.seats[seatIndex];
       if (seat && seat.playerId === adjustment.userId) {
-        await this.tablesService.applyStackAdjustment(runtime, seatIndex, adjustment.newStack);
+        await this.tablesService.applyStackAdjustment(runtime, seatIndex, adjustment.mode, adjustment.amount);
       }
     }
     runtime.pendingStackAdjustments.clear();

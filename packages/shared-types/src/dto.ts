@@ -120,6 +120,8 @@ export interface CardFlipPlayerView {
   hand: Card[];
   /** Best-hand label ("Pair of Kings", "Ace High") for this seat's current cards — works below 5 cards, unlike poker. Null only before the first card is drawn. */
   handStrengthLabel: string | null;
+  /** True if the last card in `hand` is the one this seat most recently drew (cleared once anyone else draws). */
+  justDrewLastCard: boolean;
 }
 
 export interface CardFlipLegalActions {
@@ -141,6 +143,10 @@ export interface CardFlipRoundView {
   leaderSeatIndex: number | null;
   /** Card counts remaining in each of the 3 shared draw piles. */
   pileCounts: number[];
+  /** Which pile (0/1/2) the most recent draw came from, so the UI can reveal it there. */
+  lastDrawPileIndex: number | null;
+  /** The actual card most recently drawn, shown face-up at its pile's position (flip-revealed) until the next draw. */
+  lastDrawnCard: Card | null;
   players: CardFlipPlayerView[];
   /** Populated only for the viewer when they're seated in this round. */
   legalActions: CardFlipLegalActions | null;

@@ -24,7 +24,9 @@ export interface HandActionRequest {
 export interface SeatAdjustStackPayload {
   tableId: string;
   seatIndex: number;
-  newStack: number;
+  /** "add"/"remove" are relative to whatever the stack is when this actually applies (immediately, or at the next hand/round if queued mid-hand) — never a snapshot taken at request time, since the stack can keep changing until then. "set" is the one genuinely absolute mode. */
+  mode: "add" | "remove" | "set";
+  amount: number;
 }
 
 export interface SeatIndexPayload {

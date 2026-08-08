@@ -22,7 +22,7 @@ import type {
 } from "@5lapnow/shared-types";
 import { PrismaService } from "../prisma/prisma.service";
 import { GamesService } from "../games/games.service";
-import { RuntimeTable, buildTableSnapshot, NextGameOverride } from "./table-snapshot";
+import { RuntimeTable, buildTableSnapshot, NextGameOverride, resolvePendingStackAdjustment } from "./table-snapshot";
 
 type TableChangeListener = (tableId: string) => void;
 
@@ -424,28 +424,37 @@ export class TablesService implements OnModuleInit {
    * (stack goes up) or cash-out (stack goes down) of the delta amount, so the
    * ledger's net-up/down math stays accurate — a top-up isn't a "win" and a
    * clawback isn't a "loss". Mutating a stack mid-hand would corrupt the live
-   * pot/contribution accounting, so while a hand is in progress the change is
-   * queued instead and applied at the start of the next hand.
+   * pot/contribution accounting, so while a hand/round is in progress the
+   * change is queued instead and applied at the start of the next one.
+   *
+   * "add"/"remove" are stored as a mode+amount, not a resolved target — the
+   * stack can keep moving (wins, Clang eats, Card Flip settlement) for the
+   * rest of the current hand/round after this is queued, so resolving against
+   * today's stack now and reapplying that stale absolute number later would
+   * silently discard whatever happened in between. Resolution against the
+   * live stack happens at actual apply time in `applyStackAdjustment`. "set"
+   * is the one mode that's genuinely meant to be an absolute override.
    */
-  async adjustStack(tableId: string, seatIndex: number, approverUserId: string, newStack: number): Promise<void> {
+  async adjustStack(tableId: string, seatIndex: number, approverUserId: string, mode: "add" | "remove" | "set", amount: number): Promise<void> {
     const runtime = this.getRuntimeTable(tableId);
     if (approverUserId !== runtime.ownerId) throw new ForbiddenException("Only the table owner can adjust stacks");
     const seat = runtime.table.seats[seatIndex];
     if (!seat || seat.status !== "active" || !seat.playerId) throw new BadRequestException("Seat is not occupied");
-    if (newStack < 0) throw new BadRequestException("Stack cannot be negative");
+    if (amount < 0) throw new BadRequestException("Amount cannot be negative");
 
-    const handInProgress = runtime.hand !== null && runtime.hand.phase !== "complete";
+    const handInProgress = this.isRoundInProgress(runtime);
     if (handInProgress) {
-      runtime.pendingStackAdjustments.set(seatIndex, { userId: seat.playerId, newStack });
+      runtime.pendingStackAdjustments.set(seatIndex, { userId: seat.playerId, mode, amount });
     } else {
-      await this.applyStackAdjustment(runtime, seatIndex, newStack);
+      await this.applyStackAdjustment(runtime, seatIndex, mode, amount);
     }
     this.emitChanged(tableId);
   }
 
-  async applyStackAdjustment(runtime: RuntimeTable, seatIndex: number, newStack: number): Promise<void> {
+  async applyStackAdjustment(runtime: RuntimeTable, seatIndex: number, mode: "add" | "remove" | "set", amount: number): Promise<void> {
     const seat = runtime.table.seats[seatIndex];
     if (!seat || !seat.playerId) return;
+    const newStack = resolvePendingStackAdjustment(seat.stack, { userId: seat.playerId, mode, amount });
     const delta = newStack - seat.stack;
     if (delta === 0) return;
     const playerId = seat.playerId;
@@ -483,7 +492,7 @@ export class TablesService implements OnModuleInit {
     for (const [seatIndex, adjustment] of runtime.pendingStackAdjustments) {
       const seat = runtime.table.seats[seatIndex];
       if (seat && seat.playerId === adjustment.userId) {
-        await this.applyStackAdjustment(runtime, seatIndex, adjustment.newStack);
+        await this.applyStackAdjustment(runtime, seatIndex, adjustment.mode, adjustment.amount);
       }
     }
     runtime.pendingStackAdjustments.clear();

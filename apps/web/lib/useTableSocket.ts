@@ -41,8 +41,8 @@ export function useTableSocket(tableId: string | null) {
     tableId && socketRef.current?.emit("seat:approve", { tableId, requestId, buyIn });
   const rejectRequest = (requestId: string) => tableId && socketRef.current?.emit("seat:reject", { tableId, requestId });
   const cancelRequest = (requestId: string) => tableId && socketRef.current?.emit("seat:cancelRequest", { tableId, requestId });
-  const adjustStack = (seatIndex: number, newStack: number) =>
-    tableId && socketRef.current?.emit("seat:adjustStack", { tableId, seatIndex, newStack });
+  const adjustStack = (seatIndex: number, mode: "add" | "remove" | "set", amount: number) =>
+    tableId && socketRef.current?.emit("seat:adjustStack", { tableId, seatIndex, mode, amount });
   const removePlayer = (seatIndex: number) => tableId && socketRef.current?.emit("seat:remove", { tableId, seatIndex });
   const setSeatAway = (seatIndex: number, away: boolean) =>
     tableId && socketRef.current?.emit("seat:setAway", { tableId, seatIndex, away });

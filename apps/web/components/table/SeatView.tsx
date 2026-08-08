@@ -12,7 +12,22 @@ import type { PokerSeatGameProps } from "./poker/seatGameProps";
 import type { ClangSeatGameProps } from "./clang/seatGameProps";
 import type { CardFlipSeatGameProps } from "./cardflip/seatGameProps";
 
-const SEAT_BOX = "min-h-20 min-w-20 sm:min-h-32 sm:min-w-44";
+// max-w caps the box so a big hand (Clang/Card Flip can run past poker's 2
+// cards, up to 10) wraps into multiple rows instead of growing wider than
+// the viewport — side seats near the felt's left/right edge would otherwise
+// push cards off-screen on mobile with nothing to force a wrap.
+// w-max is load-bearing: this box is absolutely positioned with a `left`
+// offset (see page.tsx) and centered afterward via -translate-x-1/2. Without
+// an explicit width, the browser's shrink-to-fit sizing for `width: auto`
+// caps itself at the space between that `left` offset and the containing
+// block's edge — computed BEFORE the transform shifts it — so a seat
+// anchored near the right edge (left: 86%) gets a much narrower "available"
+// width than one near the left edge (left: 14%) and wraps its cards earlier,
+// even with identical content and the same max-w. `w-max` (width:
+// max-content) sizes purely off the content, ignoring that positional
+// constraint, so every seat's card fan wraps identically regardless of
+// where it sits on the felt.
+const SEAT_BOX = "min-h-20 min-w-20 max-w-28 w-max sm:min-h-32 sm:min-w-44 sm:max-w-56";
 const EMPTY_BOX_CLASS = cn(
   SEAT_BOX,
   "flex flex-col items-center justify-center gap-1 rounded-xl border border-dashed border-white/20 bg-neutral-800 p-1.5 sm:p-2"
@@ -66,7 +81,7 @@ export function SeatView({
   onApprove: (requestId: string, buyIn: number) => void;
   onReject: (requestId: string) => void;
   onCancelRequest: (requestId: string) => void;
-  onAdjustStack: (newStack: number) => void;
+  onAdjustStack: (mode: "add" | "remove" | "set", amount: number) => void;
   onRemovePlayer: () => void;
   onSetAway: (away: boolean) => void;
   onTransferOwnership: () => void;
@@ -401,15 +416,23 @@ export function SeatView({
       {isEatCandidate && <span className="text-[9px] font-bold text-amber-300 sm:text-[10px]">CAN EAT</span>}
       {isLeader && <span className="text-[9px] font-bold text-amber-300 sm:text-[10px]">LEADER</span>}
       {(cards || cardCount > 0) && (
-        <div className="flex flex-wrap justify-center gap-0.5 sm:gap-1">
+        // A fanned overlap (each card after the first pulled left, later ones
+        // painting on top) instead of a wrapped grid — a hand bigger than
+        // poker's 2 cards (Clang/Card Flip can run past 5) stayed compact and
+        // readable in one row instead of a blocky multi-row grid; flex-wrap
+        // stays on as a fallback for extreme hand sizes.
+        <div className="flex flex-wrap justify-center">
           {cards
             ? cards.map((c, i) => {
-                const isNew = game.kind === "clang" && game.clangPlayer?.justDrewLastCard && i === cards!.length - 1;
+                const isNew =
+                  (game.kind === "clang" && game.clangPlayer?.justDrewLastCard) ||
+                  (game.kind === "cardflip" && game.cardFlipPlayer?.justDrewLastCard);
+                const isNewCard = isNew && i === cards!.length - 1;
                 return (
                   <motion.div
                     key={`up-${i}-${c.rank}-${c.suit}`}
                     animate={
-                      isNew
+                      isNewCard
                         ? {
                             y: [0, -5, 0],
                             boxShadow: [
@@ -420,18 +443,23 @@ export function SeatView({
                           }
                         : { y: 0, boxShadow: "0 0 0px rgba(251,191,36,0)" }
                     }
-                    transition={isNew ? { duration: 1.1, repeat: Infinity, repeatType: "reverse", ease: "easeInOut" } : { duration: 0.2 }}
-                    className={cn("rounded-sm", isNew && "ring-2 ring-amber-400")}
+                    transition={isNewCard ? { duration: 1.1, repeat: Infinity, repeatType: "reverse", ease: "easeInOut" } : { duration: 0.2 }}
+                    className={cn("rounded-sm", i > 0 && "-ml-4 sm:-ml-5", isNewCard && "z-10 ring-2 ring-amber-400")}
                   >
-                    <PlayingCard card={c} small dealDelay={i * 0.08} />
+                    {/* Starts strictly after Card Flip's pile has already reverted to
+                        face-down (CARD_FLIP_PILE_REVEAL_MS = 500ms in page.tsx) — the
+                        revealed pile and this new hand card must never be visible at
+                        the same time, or the same card reads as "in two places". */}
+                    <PlayingCard card={c} small dealDelay={isNewCard ? 0.55 : i * 0.08} />
                   </motion.div>
                 );
               })
-            : Array.from({ length: cardCount }).map((_, i) => <PlayingCard key={`down-${i}`} card={null} small dealDelay={i * 0.08} />)}
+            : Array.from({ length: cardCount }).map((_, i) => (
+                <div key={`down-${i}`} className={cn(i > 0 && "-ml-4 sm:-ml-5")}>
+                  <PlayingCard card={null} small dealDelay={i * 0.08} />
+                </div>
+              ))}
         </div>
-      )}
-      {game.kind === "clang" && game.clangPlayer?.handValue != null && (
-        <span className="text-[9px] text-white/50 sm:text-[10px]">value {game.clangPlayer.handValue}</span>
       )}
       {game.kind === "poker" && game.handPlayer?.handStrengthLabel && (
         <span className="text-[9px] text-white/50 sm:text-[10px]">{game.handPlayer.handStrengthLabel}</span>
@@ -529,7 +557,7 @@ export function SeatView({
   };
   const saveAdjust = () => {
     if (!canSaveAdjust) return;
-    onAdjustStack(adjustTarget);
+    onAdjustStack(adjustMode, adjustValue);
     closeAdjust();
   };
   const modes: Array<{ key: "add" | "remove" | "set"; label: string }> = [

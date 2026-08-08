@@ -30,6 +30,7 @@ function groupByRank(hand: Card[]): Array<{ rank: number; cards: Card[] }> {
 
 export function ClangActionPanel({
   hand,
+  handValue,
   legalActions,
   onPlay,
   onEat,
@@ -38,6 +39,8 @@ export function ClangActionPanel({
   onCallClangInstant,
 }: {
   hand: Card[];
+  /** Your current point total — live for your own hand, shown beside the Call Clang button. */
+  handValue: number | null;
   legalActions: ClangLegalActions | null;
   onPlay: (rank: number) => void;
   onEat: () => void;
@@ -111,12 +114,19 @@ export function ClangActionPanel({
       )}
 
       {canCallClangNormal && (
-        <button
-          onClick={onCallClang}
-          className="rounded-full bg-purple-600 px-5 py-2 text-sm font-medium text-white hover:bg-purple-500"
-        >
-          Call Clang
-        </button>
+        <div className="flex items-center gap-2">
+          {handValue != null && (
+            <span className="rounded-full border border-white/10 bg-white/5 px-3 py-2 text-sm font-medium text-white/70">
+              Total: {handValue}
+            </span>
+          )}
+          <button
+            onClick={onCallClang}
+            className="rounded-full bg-purple-600 px-5 py-2 text-sm font-medium text-white hover:bg-purple-500"
+          >
+            Call Clang
+          </button>
+        </div>
       )}
     </motion.div>
   );

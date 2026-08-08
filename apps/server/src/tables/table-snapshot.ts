@@ -32,7 +32,16 @@ export interface SeatRequestState {
 
 export interface PendingStackAdjustment {
   userId: string;
-  newStack: number;
+  /** "add"/"remove" are resolved against the live stack at apply time (immediately, or when flushed at the next hand/round start) — never against a stale snapshot taken when this was queued, since the stack can keep moving (wins/losses/eats) until then. "set" is the one genuinely absolute mode. */
+  mode: "add" | "remove" | "set";
+  amount: number;
+}
+
+/** Resolves a pending add/remove/set against `currentStack` — used both for the live "→ X next hand" snapshot preview (recomputed fresh every broadcast, so it tracks the stack as it moves) and for the real application at flush time. */
+export function resolvePendingStackAdjustment(currentStack: number, adjustment: PendingStackAdjustment): number {
+  if (adjustment.mode === "add") return currentStack + adjustment.amount;
+  if (adjustment.mode === "remove") return Math.max(0, currentStack - adjustment.amount);
+  return adjustment.amount;
 }
 
 export interface RuntimeTable {
@@ -157,12 +166,18 @@ function buildCardFlipRoundView(round: CardFlipRoundState, table: TableState, vi
   // Unlike Clang/poker, every hand is public here — you need to see the
   // current leader's hand (and everyone else's) to know what you're up
   // against, since the beat-the-leader rule is the whole game.
+  const lastAction = round.actions[round.actions.length - 1];
+  const justDrewSeatIndex = lastAction?.type === "draw" ? lastAction.seatIndex : null;
+  const lastDrawPileIndex = lastAction?.type === "draw" ? lastAction.pileIndex : null;
+
   const players: CardFlipPlayerView[] = round.players.map((p) => ({
     seatIndex: p.seatIndex,
     handCardCount: p.hand.length,
     hand: p.hand,
     handStrengthLabel: p.hand.length > 0 ? describePartialHand(p.hand) : null,
+    justDrewLastCard: p.seatIndex === justDrewSeatIndex && p.hand.length > 0,
   }));
+  const lastDrawnCard = justDrewSeatIndex !== null ? (round.players.find((p) => p.seatIndex === justDrewSeatIndex)?.hand.at(-1) ?? null) : null;
 
   const turnSeatIndex = round.phase === "turn" ? (round.turnOrder[round.turnIndex] ?? null) : null;
   const viewerSeatIndex = viewerUserId !== null ? (table.seats.find((s) => s.playerId === viewerUserId)?.seatIndex ?? null) : null;
@@ -180,6 +195,8 @@ function buildCardFlipRoundView(round: CardFlipRoundState, table: TableState, vi
     turnSeatIndex,
     leaderSeatIndex: round.leaderSeatIndex,
     pileCounts: round.piles.map((pile) => pile.length),
+    lastDrawPileIndex,
+    lastDrawnCard,
     players,
     legalActions,
     result: round.result,
@@ -205,7 +222,7 @@ export function buildTableSnapshot(runtime: RuntimeTable, viewerUserId: string |
       displayName: s.displayName,
       stack: s.stack,
       status: s.status,
-      pendingStackAdjustment: pending && pending.userId === s.playerId ? pending.newStack : null,
+      pendingStackAdjustment: pending && pending.userId === s.playerId ? resolvePendingStackAdjustment(s.stack, pending) : null,
       leavingAfterHand: runtime.standRequests.has(s.seatIndex),
     };
   });

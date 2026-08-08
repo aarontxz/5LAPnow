@@ -150,7 +150,7 @@ export class TablesGateway implements OnGatewayInit, OnModuleInit {
   @SubscribeMessage("seat:adjustStack")
   async onAdjustStack(@ConnectedSocket() socket: AppSocket, @MessageBody() payload: SeatAdjustStackPayload): Promise<void> {
     await this.guard(socket, () =>
-      this.tablesService.adjustStack(payload.tableId, payload.seatIndex, socket.data.userId, payload.newStack)
+      this.tablesService.adjustStack(payload.tableId, payload.seatIndex, socket.data.userId, payload.mode, payload.amount)
     );
   }
 
