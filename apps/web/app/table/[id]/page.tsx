@@ -41,6 +41,8 @@ export default function TablePage({ params }: { params: Promise<{ id: string }> 
   const {
     snapshot,
     error,
+    isAuthError,
+    retry,
     requestSeat,
     approveRequest,
     rejectRequest,
@@ -248,7 +250,19 @@ export default function TablePage({ params }: { params: Promise<{ id: string }> 
         </div>
       </header>
 
-      {error && <p className="text-center text-sm text-red-400">{error}</p>}
+      {error && (
+        <div className="flex items-center justify-center gap-2 text-center text-sm text-red-400">
+          <span>{error}</span>
+          {isAuthError && (
+            <button
+              onClick={retry}
+              className="rounded-full border border-red-400/40 px-3 py-1 text-xs font-medium text-red-300 hover:bg-red-400/10"
+            >
+              Retry
+            </button>
+          )}
+        </div>
+      )}
 
       {/* The felt and the action panel below are true siblings in normal
           document flow — never a fixed overlay on top of the felt — so on a

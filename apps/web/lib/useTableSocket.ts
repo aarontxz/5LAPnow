@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { io, Socket } from "socket.io-client";
 import type { ClientToServerEvents, ServerToClientEvents, TableSnapshot } from "@5lapnow/shared-types";
 import type { PlayerAction } from "@5lapnow/game-engine";
+import { api } from "./api";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4001";
 
@@ -11,20 +12,56 @@ type AppSocket = Socket<ServerToClientEvents, ClientToServerEvents>;
 
 export function useTableSocket(tableId: string | null) {
   const socketRef = useRef<AppSocket | null>(null);
+  const healRef = useRef<() => void>(() => {});
   const [snapshot, setSnapshot] = useState<TableSnapshot | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [isAuthError, setIsAuthError] = useState(false);
   const [connected, setConnected] = useState(false);
 
   useEffect(() => {
     if (!tableId) return; // wait until session is confirmed before connecting
     const socket: AppSocket = io(API_URL, { withCredentials: true, transports: ["websocket"] });
     socketRef.current = socket;
+    let healing = false;
+
+    // The gateway's connection middleware rejects the handshake if the
+    // guest-session cookie doesn't resolve to a real user. Page load
+    // guarantees a valid cookie before ever connecting (see page.tsx's
+    // bootstrap), but socket.io's own auto-reconnect (after a server
+    // restart, sleep/wake, etc.) replays the handshake directly, skipping
+    // that bootstrap — so a cookie that went stale in the meantime (DB
+    // reset, cookies cleared) gets stuck retrying the same failure forever
+    // with no recovery. Minting a fresh guest session and reconnecting fixes
+    // that without requiring a full page reload. Also exposed as `retry` so
+    // the UI can offer a manual retry button if the automatic heal fails too
+    // (e.g. the server itself is unreachable).
+    const heal = () => {
+      if (healing) return;
+      healing = true;
+      void api
+        .createGuestSession({})
+        .then(() => socket.connect())
+        .catch(() => {
+          /* leave the error displayed; the user (or the next auto-reconnect) can retry */
+        })
+        .finally(() => {
+          healing = false;
+        });
+    };
+    healRef.current = heal;
 
     socket.on("connect", () => {
       setConnected(true);
+      setError(null);
+      setIsAuthError(false);
       socket.emit("table:join", { tableId });
     });
-    socket.on("connect_error", (err) => setError(err.message));
+    socket.on("connect_error", (err) => {
+      setError(err.message);
+      const authError = err.message.includes("No valid guest session");
+      setIsAuthError(authError);
+      if (authError) heal();
+    });
     socket.on("disconnect", () => setConnected(false));
     socket.on("table:snapshot", (snap) => setSnapshot(snap));
     socket.on("action:error", (payload) => setError(payload.message));
@@ -34,6 +71,8 @@ export function useTableSocket(tableId: string | null) {
       socket.disconnect();
     };
   }, [tableId]);
+
+  const retry = () => healRef.current();
 
   const requestSeat = (seatIndex: number, buyIn: number, displayName: string) =>
     tableId && socketRef.current?.emit("seat:request", { tableId, seatIndex, buyIn, displayName });
@@ -64,6 +103,8 @@ export function useTableSocket(tableId: string | null) {
   return {
     snapshot,
     error,
+    isAuthError,
+    retry,
     connected,
     requestSeat,
     approveRequest,
