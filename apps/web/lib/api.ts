@@ -9,14 +9,24 @@ import type {
   TableSummary,
 } from "@5lapnow/shared-types";
 import type { GameDefinition } from "@5lapnow/game-engine";
+import { loadSession } from "./session";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4001";
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  // Bearer token (the guest's own user id, stored client-side after
+  // guest-session/me) is the primary auth path — some browsers (Safari,
+  // Firefox strict mode, Brave) block the cross-origin cookie fallback by
+  // default whenever the web app and API are on different origins.
+  const token = loadSession()?.userId;
   const res = await fetch(`${API_URL}${path}`, {
     ...init,
     credentials: "include",
-    headers: { "Content-Type": "application/json", ...init?.headers },
+    headers: {
+      "Content-Type": "application/json",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...init?.headers,
+    },
   });
   if (!res.ok) {
     const body = await res.text();

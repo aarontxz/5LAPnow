@@ -5,6 +5,7 @@ import { io, Socket } from "socket.io-client";
 import type { ClientToServerEvents, ServerToClientEvents, TableSnapshot } from "@5lapnow/shared-types";
 import type { PlayerAction } from "@5lapnow/game-engine";
 import { api } from "./api";
+import { loadSession } from "./session";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4001";
 
@@ -20,7 +21,14 @@ export function useTableSocket(tableId: string | null) {
 
   useEffect(() => {
     if (!tableId) return; // wait until session is confirmed before connecting
-    const socket: AppSocket = io(API_URL, { withCredentials: true, transports: ["websocket"] });
+    const socket: AppSocket = io(API_URL, {
+      withCredentials: true,
+      transports: ["websocket"],
+      // Re-evaluated on every (re)connection attempt — not a static object —
+      // so a heal() that mints a fresh session mid-connection is picked up
+      // immediately, without needing to recreate the socket.
+      auth: (cb) => cb({ token: loadSession()?.userId }),
+    });
     socketRef.current = socket;
     let healing = false;
 

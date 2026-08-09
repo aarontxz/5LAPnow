@@ -418,16 +418,18 @@ export function SeatView({
       {(cards || cardCount > 0) && (
         // A fanned overlap (each card after the first pulled left, later ones
         // painting on top) instead of a wrapped grid — a hand bigger than
-        // poker's 2 cards (Clang/Card Flip can run past 5) stayed compact and
+        // poker's 2 cards (Clang/Card Flip can run past 5) stays compact and
         // readable in one row instead of a blocky multi-row grid; flex-wrap
-        // stays on as a fallback for extreme hand sizes.
-        <div className="flex flex-wrap justify-center">
+        // stays on as a fallback for extreme hand sizes. Poker's 2 cards
+        // never need it, so they just sit normally spaced.
+        <div className={cn("flex flex-wrap justify-center", (cards?.length ?? cardCount) < 5 && "gap-0.5 sm:gap-1")}>
           {cards
             ? cards.map((c, i) => {
                 const isNew =
                   (game.kind === "clang" && game.clangPlayer?.justDrewLastCard) ||
                   (game.kind === "cardflip" && game.cardFlipPlayer?.justDrewLastCard);
                 const isNewCard = isNew && i === cards!.length - 1;
+                const shouldFan = cards!.length >= 5;
                 return (
                   <motion.div
                     key={`up-${i}-${c.rank}-${c.suit}`}
@@ -444,7 +446,7 @@ export function SeatView({
                         : { y: 0, boxShadow: "0 0 0px rgba(251,191,36,0)" }
                     }
                     transition={isNewCard ? { duration: 1.1, repeat: Infinity, repeatType: "reverse", ease: "easeInOut" } : { duration: 0.2 }}
-                    className={cn("rounded-sm", i > 0 && "-ml-4 sm:-ml-5", isNewCard && "z-10 ring-2 ring-amber-400")}
+                    className={cn("rounded-sm", i > 0 && shouldFan && "-ml-4 sm:-ml-5", isNewCard && "z-10 ring-2 ring-amber-400")}
                   >
                     {/* Starts strictly after Card Flip's pile has already reverted to
                         face-down (CARD_FLIP_PILE_REVEAL_MS = 500ms in page.tsx) — the
@@ -455,7 +457,7 @@ export function SeatView({
                 );
               })
             : Array.from({ length: cardCount }).map((_, i) => (
-                <div key={`down-${i}`} className={cn(i > 0 && "-ml-4 sm:-ml-5")}>
+                <div key={`down-${i}`} className={cn(i > 0 && cardCount >= 5 && "-ml-4 sm:-ml-5")}>
                   <PlayingCard card={null} small dealDelay={i * 0.08} />
                 </div>
               ))}

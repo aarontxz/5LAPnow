@@ -26,7 +26,7 @@ import { TablesService } from "./tables.service";
 import { ClangService } from "../clang/clang.service";
 import { CardFlipService } from "../card-flip/card-flip.service";
 import { UsersService } from "../users/users.service";
-import { GUEST_COOKIE_NAME, parseCookieHeader } from "../users/cookie";
+import { extractBearerToken, GUEST_COOKIE_NAME, parseCookieHeader } from "../users/cookie";
 
 interface SocketData {
   userId: string;
@@ -72,8 +72,14 @@ export class TablesGateway implements OnGatewayInit, OnModuleInit {
     this.logger.log("Tables WebSocket gateway initialized");
     this.server.use((socket: AppSocket, next: (err?: Error) => void) => {
       void (async () => {
+        // Bearer token (sent via socket.io-client's `auth` option, evaluated
+        // fresh on every connection attempt) is the primary path — third-party
+        // cookie blocking (Safari ITP, Firefox strict mode, Brave) breaks the
+        // cookie whenever the web app and API are on different origins. The
+        // cookie stays as a same-origin-only fallback.
+        const authToken = (socket.handshake.auth as { token?: string } | undefined)?.token;
         const cookies = parseCookieHeader(socket.handshake.headers.cookie);
-        const userId = cookies[GUEST_COOKIE_NAME];
+        const userId = authToken ?? cookies[GUEST_COOKIE_NAME];
         const user = userId ? await this.usersService.findById(userId) : null;
         if (!user) {
           next(new Error("No valid guest session; POST /auth/guest-session first"));
