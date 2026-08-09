@@ -693,15 +693,20 @@ export function SeatView({
             >
               {confirmAction === "transfer" ? "Click again to confirm" : "Transfer game ownership"}
             </button>
-            <button
-              onClick={() => {
-                onSetAway(!isAway);
-                closeAdjust();
-              }}
-              className="rounded-lg bg-red-500/80 py-3 text-sm font-medium text-white hover:bg-red-500"
-            >
-              {isAway ? "Remove from away mode" : "Put on away mode"}
-            </button>
+            {/* Owner can only push a player INTO away mode, not pull them out —
+                coming back is the player's own call (their seat controls have
+                the "Back" button), not something to be forced on them. */}
+            {!isAway && (
+              <button
+                onClick={() => {
+                  onSetAway(true);
+                  closeAdjust();
+                }}
+                className="rounded-lg bg-red-500/80 py-3 text-sm font-medium text-white hover:bg-red-500"
+              >
+                Put on away mode
+              </button>
+            )}
           </div>
         </div>
       </Modal>
