@@ -1,6 +1,9 @@
 import { BadRequestException, Injectable, NotFoundException } from "@nestjs/common";
 import { GameEngine } from "@prisma/client";
 import { GameDefinition, safeParseGameDefinition } from "@5lapnow/game-engine";
+
+import { ClangGameDefinition, safeParseClangGameDefinition } from "@5lapnow/clang-engine";
+import { CardFlipGameDefinition, safeParseCardFlipGameDefinition } from "@5lapnow/card-flip-engine";
 import { GameGenerationRequestView, validateGameGenerationPrompt } from "@5lapnow/shared-types";
 import { PrismaService } from "../prisma/prisma.service";
 
@@ -19,8 +22,8 @@ export class GamesService {
       description: row.description,
       source: row.source,
       engine: row.engine,
-      /** Null for non-poker engines (e.g. Clang, which has no streets/blinds to describe). */
-      definition: row.definition ? (row.definition as unknown as GameDefinition) : null,
+      /** Poker's own GameDefinition shape when `engine` is poker; the raw ClangGameDefinition/CardFlipGameDefinition JSON otherwise. */
+      definition: row.engine === "poker" ? (row.definition ? (row.definition as unknown as GameDefinition) : null) : row.definition,
     }));
   }
 
@@ -29,6 +32,28 @@ export class GamesService {
     const row = await this.getRow(id);
     if (row.engine !== "poker") throw new BadRequestException(`Game definition ${id} is not a poker game`);
     const parsed = safeParseGameDefinition(row.definition);
+    if (!parsed.success) {
+      throw new Error(`Stored game definition ${id} failed schema validation: ${parsed.error.message}`);
+    }
+    return parsed.data;
+  }
+
+  /** Clang-only: parses and validates the ClangEngine-shaped definition JSON (stake, eat payment). Throws for non-Clang rows. */
+  async getClangDefinition(id: string): Promise<ClangGameDefinition> {
+    const row = await this.getRow(id);
+    if (row.engine !== "clang") throw new BadRequestException(`Game definition ${id} is not a Clang game`);
+    const parsed = safeParseClangGameDefinition(row.definition);
+    if (!parsed.success) {
+      throw new Error(`Stored game definition ${id} failed schema validation: ${parsed.error.message}`);
+    }
+    return parsed.data;
+  }
+
+  /** Card Flip-only: parses and validates the CardFlipEngine-shaped definition JSON (stake, cards per player, bonuses). Throws for non-Card-Flip rows. */
+  async getCardFlipDefinition(id: string): Promise<CardFlipGameDefinition> {
+    const row = await this.getRow(id);
+    if (row.engine !== "cardflip") throw new BadRequestException(`Game definition ${id} is not a 10 Card Flip game`);
+    const parsed = safeParseCardFlipGameDefinition(row.definition);
     if (!parsed.success) {
       throw new Error(`Stored game definition ${id} failed schema validation: ${parsed.error.message}`);
     }

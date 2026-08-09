@@ -1,11 +1,9 @@
 import { Card, createStandardDeck, shuffle } from "@5lapnow/cards";
 import { activeSeats, nextButtonSeatIndex, TableState } from "@5lapnow/game-engine";
 import { CardFlipPayment, CardFlipPlayerState, CardFlipRoundState } from "./state.js";
-import { comparePartialHands, describePartialHand, evaluatePartialHand } from "./scoring.js";
+import { comparePartialHands, describePartialHand, evaluatePartialHand, isFourOfAKind, isStraightFlush } from "./scoring.js";
+import { CardFlipGameDefinition } from "./gameDefinition.js";
 
-/** Prefill defaults for starting a round — no owner input UI for v1, same precedent as Clang. */
-export const DEFAULT_CARD_FLIP_STAKE = 5;
-export const DEFAULT_CARDS_PER_PLAYER = 10;
 export const MIN_CARD_FLIP_PLAYERS = 2;
 export const PILE_COUNT = 3;
 
@@ -22,30 +20,33 @@ function applyPayment(table: TableState, payment: CardFlipPayment): void {
  * drawing — forced, not optional — until either their hand beats whoever
  * currently holds the strongest hand at the table (becoming the new leader,
  * ending their turn) or they hit the `cardsPerPlayer` cap without catching up
- * (their turn just ends, leader unchanged). Every seat gets exactly one such
- * turn; once the last seat in turn order finishes, whoever is leader wins the
- * stake from every other player.
+ * (their turn just ends, leader unchanged). Turn order cycles as many times
+ * as it takes — a seat that hasn't hit the cap yet can come back around for
+ * another turn — until every seat other than the current leader is capped
+ * out, at which point nobody's left who could still dethrone them and the
+ * round settles immediately, whoever is leader winning the stake from
+ * everyone else.
  */
 export class CardFlipEngine {
   constructor(private readonly rng: () => number = Math.random) {}
 
   /** Production entry point: shuffles enough combined standard decks and deals. */
-  startRound(table: TableState, roundNumber: number, stake: number, cardsPerPlayer: number): CardFlipRoundState {
+  startRound(table: TableState, roundNumber: number, config: CardFlipGameDefinition): CardFlipRoundState {
     const seats = activeSeats(table);
-    const deckCount = Math.max(1, Math.ceil((cardsPerPlayer * seats.length) / 52));
+    const deckCount = Math.max(1, Math.ceil((config.cardsPerPlayer * seats.length) / 52));
     const cards = Array.from({ length: deckCount }, () => createStandardDeck({ jokers: 0 })).flat();
     const deck = shuffle(cards, this.rng);
-    return this.startRoundWithDeck(table, roundNumber, stake, cardsPerPlayer, deck);
+    return this.startRoundWithDeck(table, roundNumber, config, deck);
   }
 
   /** Core deal logic, decoupled from shuffling so tests could hand-craft exact piles. */
   startRoundWithDeck(
     table: TableState,
     roundNumber: number,
-    stake: number,
-    cardsPerPlayer: number,
+    config: CardFlipGameDefinition,
     orderedDeck: Card[]
   ): CardFlipRoundState {
+    const { cardsPerPlayer, stake } = config;
     const seats = activeSeats(table);
     if (seats.length < MIN_CARD_FLIP_PLAYERS) {
       throw new Error(`10 Card Flip requires at least ${MIN_CARD_FLIP_PLAYERS} players, got ${seats.length}`);
@@ -72,6 +73,11 @@ export class CardFlipEngine {
       roundNumber,
       stake,
       cardsPerPlayer,
+      bonusConfig: {
+        unopenedCardBonus: config.unopenedCardBonus,
+        straightFlushBonus: config.straightFlushBonus,
+        fourOfAKindBonus: config.fourOfAKindBonus,
+      },
       phase: "turn",
       piles,
       players,
@@ -111,21 +117,30 @@ export class CardFlipEngine {
     }
     // Either this player just took the lead, or they hit the cap without catching up — their turn is over either way.
 
-    // Find the next player who still needs cards; settle only when everyone has reached the cap.
+    // Once every OTHER seat is capped out, nobody is left who could still
+    // draw and dethrone the leader — more draws from the leader themselves
+    // can't change the outcome (comparing their hand against their own
+    // leader title never "beats" it), so settle immediately instead of
+    // pointlessly cycling them through more forced draws.
+    const leaderSeatIndex = round.leaderSeatIndex as number; // always set by now — the very first draw always sets it
+    const othersStillInPlay = round.players.some(
+      (p) => p.seatIndex !== leaderSeatIndex && p.hand.length < round.cardsPerPlayer
+    );
+    if (!othersStillInPlay) {
+      this.settle(table, round);
+      return;
+    }
+
+    // Find the next player who still needs cards.
     const n = round.turnOrder.length;
-    let nextFound = false;
     for (let step = 1; step <= n; step++) {
       const candidateIndex = (round.turnIndex + step) % n;
       const candidateSeatIndex = round.turnOrder[candidateIndex] as number;
       const candidate = this.requirePlayer(round, candidateSeatIndex);
       if (candidate.hand.length < round.cardsPerPlayer) {
         round.turnIndex = candidateIndex;
-        nextFound = true;
-        break;
+        return;
       }
-    }
-    if (!nextFound) {
-      this.settle(table, round);
     }
   }
 
@@ -140,13 +155,25 @@ export class CardFlipEngine {
     return player;
   }
 
-  /** Whoever holds the leader title once every seat has had its turn wins the stake from every other player outright. */
+  /**
+   * Whoever holds the leader title once every seat has had its turn wins the
+   * stake from every other player outright, plus whatever bonuses the round's
+   * config attaches: extra per card of `cardsPerPlayer` the winner never had
+   * to draw (they held the lead before using up their allotted flips), and
+   * flat bonuses if their final hand is a four of a kind or straight flush.
+   */
   private settle(table: TableState, round: CardFlipRoundState): void {
     const winnerSeatIndex = round.leaderSeatIndex as number;
+    const winner = this.requirePlayer(round, winnerSeatIndex);
+    const unopenedCards = Math.max(0, round.cardsPerPlayer - winner.hand.length);
+    let amount = round.stake + unopenedCards * round.bonusConfig.unopenedCardBonus;
+    if (isStraightFlush(winner.hand)) amount += round.bonusConfig.straightFlushBonus;
+    else if (isFourOfAKind(winner.hand)) amount += round.bonusConfig.fourOfAKindBonus;
+
     const payments: CardFlipPayment[] = [];
     for (const p of round.players) {
       if (p.seatIndex === winnerSeatIndex) continue;
-      const payment: CardFlipPayment = { fromSeatIndex: p.seatIndex, toSeatIndex: winnerSeatIndex, amount: round.stake };
+      const payment: CardFlipPayment = { fromSeatIndex: p.seatIndex, toSeatIndex: winnerSeatIndex, amount };
       applyPayment(table, payment);
       payments.push(payment);
     }

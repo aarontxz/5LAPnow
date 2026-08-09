@@ -13,6 +13,7 @@ import {
 import type { Card } from "@5lapnow/cards";
 import type {
   CardFlipRoundLogEntry,
+  ChatMessageView,
   ClangRoundLogEntry,
   CreateTableRequest,
   HandLogEntry,
@@ -768,5 +769,40 @@ export class TablesService implements OnModuleInit {
       })),
       players,
     };
+  }
+
+  private readonly CHAT_HISTORY_LIMIT = 50;
+  private readonly CHAT_MESSAGE_MAX_LENGTH = 500;
+
+  /** Seated players use their seat's name; a not-yet-approved requester uses whatever name they requested with — covers everyone actually able to reach the table. */
+  private resolveChatDisplayName(runtime: RuntimeTable, userId: string): string {
+    const seat = runtime.table.seats.find((s) => s.playerId === userId);
+    if (seat?.displayName) return seat.displayName;
+    const pending = runtime.pendingRequests.find((r) => r.userId === userId);
+    if (pending) return pending.displayName;
+    return "Guest";
+  }
+
+  async sendChatMessage(tableId: string, userId: string, body: string): Promise<ChatMessageView> {
+    const runtime = this.getRuntimeTable(tableId); // also validates the table exists
+    const trimmed = body.trim().slice(0, this.CHAT_MESSAGE_MAX_LENGTH);
+    if (!trimmed) throw new BadRequestException("Message cannot be empty");
+
+    const row = await this.prisma.chatMessage.create({
+      data: { tableId, userId, displayName: this.resolveChatDisplayName(runtime, userId), body: trimmed },
+    });
+    return { id: row.id, userId: row.userId, displayName: row.displayName, body: row.body, createdAt: row.createdAt.toISOString() };
+  }
+
+  /** Most-recent-last, capped at CHAT_HISTORY_LIMIT — sent once on table:join so a panel opened mid-game still has scrollback. */
+  async getRecentChatMessages(tableId: string): Promise<ChatMessageView[]> {
+    const rows = await this.prisma.chatMessage.findMany({
+      where: { tableId },
+      orderBy: { createdAt: "desc" },
+      take: this.CHAT_HISTORY_LIMIT,
+    });
+    return rows
+      .reverse()
+      .map((row) => ({ id: row.id, userId: row.userId, displayName: row.displayName, body: row.body, createdAt: row.createdAt.toISOString() }));
   }
 }

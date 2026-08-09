@@ -3,6 +3,7 @@
 import { use, useEffect, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import type { PotShare } from "@5lapnow/game-engine";
+import type { ChatMessageView } from "@5lapnow/shared-types";
 import { saveSession, type Session } from "@/lib/session";
 import { api } from "@/lib/api";
 import { useTableSocket } from "@/lib/useTableSocket";
@@ -13,6 +14,7 @@ import { PlayingCard } from "@/components/table/PlayingCard";
 import { ActionControls } from "@/components/table/poker/ActionControls";
 import { AnimatedNumber } from "@/components/table/AnimatedNumber";
 import { LedgerModal } from "@/components/table/LedgerModal";
+import { ChatPanel } from "@/components/table/ChatPanel";
 import { NextGamePicker } from "@/components/table/NextGamePicker";
 import { relativeSeatIndex, seatPosition, chipDirection } from "@/lib/seatLayout";
 
@@ -36,6 +38,7 @@ export default function TablePage({ params }: { params: Promise<{ id: string }> 
   // Socket only connects once the cookie is confirmed alive; null keeps it idle.
   const [readyTableId, setReadyTableId] = useState<string | null>(null);
   const [ledgerOpen, setLedgerOpen] = useState(false);
+  const [chatOpen, setChatOpen] = useState(false);
   const [linkCopied, setLinkCopied] = useState(false);
   const [games, setGames] = useState<Array<{ id: string; name: string; description: string }>>([]);
   const {
@@ -63,6 +66,9 @@ export default function TablePage({ params }: { params: Promise<{ id: string }> 
     clangCallClang,
     clangCallClangInstant,
     cardFlipDraw,
+    chatMessages,
+    lastLiveMessage,
+    sendChatMessage,
   } = useTableSocket(readyTableId);
 
   // Validate the cookie before opening the socket — stale localStorage with an
@@ -129,6 +135,28 @@ export default function TablePage({ params }: { params: Promise<{ id: string }> 
     const timer = setTimeout(() => setActiveEat(null), EAT_BANNER_MS);
     return () => clearTimeout(timer);
   }, [clangLastEat?.actionIndex]);
+
+  // Chat: track how many messages have been "seen" (panel open while they
+  // arrived) so the button can show an unread badge, and surface a transient
+  // toast with the latest message for anyone who never opens the panel.
+  const [readChatCount, setReadChatCount] = useState(0);
+  useEffect(() => {
+    if (chatOpen) setReadChatCount(chatMessages.length);
+  }, [chatOpen, chatMessages.length]);
+  const unreadChatCount = chatOpen ? 0 : chatMessages.length - readChatCount;
+
+  const CHAT_TOAST_MS = 4000;
+  const [chatToast, setChatToast] = useState<ChatMessageView | null>(null);
+  useEffect(() => {
+    // Keyed off lastLiveMessage specifically (not the chatMessages array) so
+    // this only ever fires for a message that just arrived live — table:join
+    // replaying history (e.g. on every reconnect) must never pop a toast for
+    // something said before this client even connected.
+    if (!lastLiveMessage || chatOpen) return;
+    setChatToast(lastLiveMessage);
+    const timer = setTimeout(() => setChatToast(null), CHAT_TOAST_MS);
+    return () => clearTimeout(timer);
+  }, [lastLiveMessage, chatOpen]);
 
   // 's' hotkey lets the owner start a hand without reaching for the button.
   useEffect(() => {
@@ -198,57 +226,199 @@ export default function TablePage({ params }: { params: Promise<{ id: string }> 
     setTimeout(() => setLinkCopied(false), 1500);
   }
 
-  return (
-    <main className="relative flex h-dvh flex-1 flex-col overflow-y-auto px-2 py-2 sm:px-6 sm:py-6">
-      <header className="flex items-start justify-between gap-2">
-        <div className="flex items-center gap-2">
-          <motion.button
-            whileHover={{ scale: 1.03 }}
-            whileTap={{ scale: 0.96 }}
-            onClick={() => setLedgerOpen(true)}
-            className="flex shrink-0 items-center gap-1.5 rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-medium text-white/70 shadow-sm hover:border-white/20 hover:bg-white/10 hover:text-white sm:px-3.5 sm:py-2 sm:text-sm"
-          >
-            <span aria-hidden>📒</span>
-            Log &amp; Ledger
-          </motion.button>
-          <motion.button
-            whileHover={{ scale: 1.03 }}
-            whileTap={{ scale: 0.96 }}
-            onClick={copyShareLink}
-            className={`flex shrink-0 items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium shadow-sm transition-colors sm:px-3.5 sm:py-2 sm:text-sm ${
-              linkCopied
-                ? "border-emerald-400/50 bg-emerald-400/10 text-emerald-300"
-                : "border-white/10 bg-white/5 text-white/70 hover:border-white/20 hover:bg-white/10 hover:text-white"
-            }`}
-          >
-            <span aria-hidden>{linkCopied ? "✅" : "🔗"}</span>
-            {linkCopied ? "Copied!" : "Share"}
-          </motion.button>
-        </div>
-        <div className="flex items-center gap-2">
-          {mySeat && (
-            <>
-              <button
-                onClick={() => setSeatAway(mySeatIndex!, mySeat.status !== "sitting-out")}
-                className={`rounded-full border px-3 py-1.5 text-xs font-medium transition-colors ${
-                  mySeat.status === "sitting-out"
-                    ? "border-amber-400/50 bg-amber-400/10 text-amber-300 hover:bg-amber-400/20"
-                    : "border-white/10 bg-white/5 text-white/50 hover:border-white/20 hover:text-white/80"
-                }`}
-              >
-                {mySeat.status === "sitting-out" ? "Back" : "Away"}
-              </button>
-              <button
-                onClick={stand}
-                disabled={mySeat.leavingAfterHand}
-                className="rounded-full border border-red-500/30 bg-red-500/10 px-3 py-1.5 text-xs font-medium text-red-400 transition-colors hover:bg-red-500/20 hover:text-red-300 disabled:cursor-default disabled:border-white/10 disabled:bg-transparent disabled:text-white/30"
-              >
-                {mySeat.leavingAfterHand ? "Leaving…" : "Stand up"}
-              </button>
-            </>
+  // Rendered in two places at once (mobile in-flow header/footer vs. desktop
+  // fixed corners below) — pulled into functions instead of duplicating JSX
+  // literally. Each call mounts its own independent instance; only one of
+  // the two is ever visually shown per breakpoint (the other's wrapper is
+  // `hidden`), matching the split-tree pattern ChatPanel already uses.
+  function renderMenuButtons() {
+    return (
+      <>
+        <motion.button
+          whileHover={{ scale: 1.03 }}
+          whileTap={{ scale: 0.96 }}
+          onClick={() => setLedgerOpen(true)}
+          className="flex shrink-0 items-center gap-1.5 rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-medium text-white/70 shadow-sm hover:border-white/20 hover:bg-white/10 hover:text-white sm:px-3.5 sm:py-2 sm:text-sm"
+        >
+          <span aria-hidden>📒</span>
+          Log &amp; Ledger
+        </motion.button>
+        <motion.button
+          whileHover={{ scale: 1.03 }}
+          whileTap={{ scale: 0.96 }}
+          onClick={copyShareLink}
+          className={`flex shrink-0 items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium shadow-sm transition-colors sm:px-3.5 sm:py-2 sm:text-sm ${
+            linkCopied
+              ? "border-emerald-400/50 bg-emerald-400/10 text-emerald-300"
+              : "border-white/10 bg-white/5 text-white/70 hover:border-white/20 hover:bg-white/10 hover:text-white"
+          }`}
+        >
+          <span aria-hidden>{linkCopied ? "✅" : "🔗"}</span>
+          {linkCopied ? "Copied!" : "Share"}
+        </motion.button>
+        <motion.button
+          whileHover={{ scale: 1.03 }}
+          whileTap={{ scale: 0.96 }}
+          onClick={() => setChatOpen(true)}
+          className="relative flex shrink-0 items-center gap-1.5 rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-medium text-white/70 shadow-sm hover:border-white/20 hover:bg-white/10 hover:text-white sm:px-3.5 sm:py-2 sm:text-sm"
+        >
+          <span aria-hidden>💬</span>
+          Chat
+          {unreadChatCount > 0 && (
+            <span className="absolute -right-1.5 -top-1.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-purple-500 px-1 text-[9px] font-bold text-white">
+              {unreadChatCount}
+            </span>
           )}
+        </motion.button>
+      </>
+    );
+  }
+
+  function renderSeatControls() {
+    if (!mySeat) return null;
+    return (
+      <>
+        <button
+          onClick={() => setSeatAway(mySeatIndex!, mySeat.status !== "sitting-out")}
+          className={`rounded-full border px-3 py-1.5 text-xs font-medium transition-colors ${
+            mySeat.status === "sitting-out"
+              ? "border-amber-400/50 bg-amber-400/10 text-amber-300 hover:bg-amber-400/20"
+              : "border-white/10 bg-white/5 text-white/50 hover:border-white/20 hover:text-white/80"
+          }`}
+        >
+          {mySeat.status === "sitting-out" ? "Back" : "Away"}
+        </button>
+        <button
+          onClick={stand}
+          disabled={mySeat.leavingAfterHand}
+          className="rounded-full border border-red-500/30 bg-red-500/10 px-3 py-1.5 text-xs font-medium text-red-400 transition-colors hover:bg-red-500/20 hover:text-red-300 disabled:cursor-default disabled:border-white/10 disabled:bg-transparent disabled:text-white/30"
+        >
+          {mySeat.leavingAfterHand ? "Leaving…" : "Stand up"}
+        </button>
+      </>
+    );
+  }
+
+  // One "Start" control for both engines: the dropdown lists every game
+  // (poker variants and Clang/Card Flip alike), and starting deals whichever
+  // engine is currently active or queued — resolved server-side.
+  function renderStartControl() {
+    return (
+      <AnimatePresence>
+        {isOwner && !snapshot?.handInProgress && activeSeats >= 2 && (
+          <motion.div
+            key="start-hand"
+            initial={{ opacity: 0, scale: 0.9 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.9 }}
+            transition={{ duration: 0.2 }}
+          >
+            <NextGamePicker
+              games={games}
+              activeGameDefinitionId={snapshot?.nextGameDefinitionId}
+              onSelect={setNextGame}
+              onStart={startHand}
+            />
+          </motion.div>
+        )}
+      </AnimatePresence>
+    );
+  }
+
+  function renderActionPanel() {
+    if (isClang) {
+      return (
+        <AnimatePresence>
+          {mySeat && clangRound && clangRoundActive && (
+            <ClangActionPanel
+              key="clang-actions"
+              hand={myClangPlayer?.hand ?? []}
+              handValue={myClangPlayer?.handValue ?? null}
+              legalActions={clangRound.legalActions}
+              onPlay={clangPlay}
+              onEat={clangEat}
+              onPassEat={clangPassEat}
+              onCallClang={clangCallClang}
+              onCallClangInstant={clangCallClangInstant}
+            />
+          )}
+        </AnimatePresence>
+      );
+    }
+    if (isCardFlip) {
+      return (
+        <AnimatePresence>
+          {mySeat && cardFlipRound && cardFlipRoundActive && (
+            <CardFlipActionPanel
+              key="cardflip-actions"
+              pileCounts={cardFlipRound.pileCounts}
+              legalActions={cardFlipRound.legalActions}
+              onDraw={cardFlipDraw}
+            />
+          )}
+        </AnimatePresence>
+      );
+    }
+    return (
+      <AnimatePresence>
+        {mySeat && snapshot?.handInProgress && (
+          <ActionControls key="action-controls" legalActions={legalActions} pot={hand?.pot ?? 0} currentBet={currentBet} onAction={sendAction} />
+        )}
+      </AnimatePresence>
+    );
+  }
+
+  return (
+    <main className="relative h-dvh w-full overflow-hidden">
+      {/* Corner-docked chrome around a table that fills the screen, mirroring
+          a traditional poker-room UI — viewer controls top-left, owner's
+          Start control top-right, Log/Share/Chat bottom-left, live turn
+          actions bottom-right. Same layout at every breakpoint (just tighter
+          offsets on phones); each corner is `fixed` and lives outside the
+          felt's own centering, so none of this ever competes with the table
+          for layout space or nudges it off-center. */}
+      <div className="pointer-events-none fixed inset-0 z-30">
+        <div className="pointer-events-auto absolute left-2 top-2 flex max-w-[55vw] flex-wrap items-center gap-1.5 sm:left-6 sm:top-6 sm:max-w-none sm:gap-2">
+          {renderSeatControls()}
         </div>
-      </header>
+        {/* Start control lives top-right on phones, but sits alongside the
+            action buttons bottom-right on PC — same corner the live turn
+            actions occupy, since the two are mutually exclusive in time
+            (Start only shows before a hand/round starts, the action panel
+            only once one is running). */}
+        <div className="pointer-events-auto absolute right-2 top-2 max-w-[45vw] sm:hidden">{renderStartControl()}</div>
+        <div className="pointer-events-auto absolute bottom-2 left-2 flex max-w-[60vw] flex-wrap items-center gap-1.5 sm:bottom-6 sm:left-6 sm:max-w-none sm:gap-2">
+          {renderMenuButtons()}
+        </div>
+        <div className="pointer-events-auto absolute bottom-2 right-2 flex max-w-[92vw] flex-col items-end gap-2 sm:bottom-6 sm:right-6 sm:max-w-none">
+          <div className="hidden sm:block">{renderStartControl()}</div>
+          {renderActionPanel()}
+        </div>
+      </div>
+
+      {/* Latest message flashes here for anyone who never opens the chat
+          panel — chatOpen already suppresses this (see the effect above),
+          so it never doubles up with the panel's own message list. Fixed
+          (not a normal flex child) so it overlaps the felt instead of
+          pushing it down when it appears. */}
+      <AnimatePresence>
+        {chatToast && (
+          <div className="pointer-events-none fixed inset-x-0 top-16 z-40 flex justify-center px-2 sm:top-20">
+            <motion.button
+              key={chatToast.id}
+              initial={{ opacity: 0, y: -8 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -8 }}
+              transition={{ duration: 0.2 }}
+              onClick={() => setChatOpen(true)}
+              className="pointer-events-auto flex w-fit max-w-[90vw] items-center gap-2 rounded-full bg-purple-500 px-3 py-1.5 text-xs text-white shadow-[0_0_16px_rgba(168,85,247,0.6)] hover:bg-purple-400"
+            >
+              <span className="shrink-0 font-bold">{chatToast.displayName}:</span>
+              <span className="truncate">{chatToast.body}</span>
+            </motion.button>
+          </div>
+        )}
+      </AnimatePresence>
 
       {error && (
         <div className="flex items-center justify-center gap-2 text-center text-sm text-red-400">
@@ -264,12 +434,12 @@ export default function TablePage({ params }: { params: Promise<{ id: string }> 
         </div>
       )}
 
-      {/* The felt and the action panel below are true siblings in normal
-          document flow — never a fixed overlay on top of the felt — so on a
-          short viewport the page scrolls instead of the panel covering the
-          viewer's own seat. */}
-      <div className="flex min-h-0 flex-1 items-center justify-center py-2">
-        <div className="relative aspect-[5/7] w-full max-w-md rounded-2xl border border-emerald-900/50 bg-gradient-to-b from-emerald-950 to-emerald-900 shadow-2xl sm:aspect-[5/6] sm:max-w-2xl">
+      {/* The felt is always fixed, dead-centered on the viewport. No
+          surrounding chrome is ever a normal-flow sibling of it (see the
+          corner-docked chrome above, which folds the action panel into its
+          bottom-right corner), so nothing can ever nudge it off-center or
+          compete with it for layout space. */}
+      <div className="fixed left-1/2 top-1/2 aspect-[5/7] h-[78vh] w-auto max-w-[94vw] -translate-x-1/2 -translate-y-1/2 rounded-2xl border border-emerald-900/50 bg-gradient-to-b from-emerald-950 to-emerald-900 shadow-2xl sm:aspect-[5/6] sm:h-[80vh] sm:max-w-[90vw]">
           <div className="absolute left-1/2 top-1/2 flex -translate-x-1/2 -translate-y-1/2 flex-col items-center gap-1 sm:gap-2">
             {isClang ? (
               <>
@@ -628,79 +798,9 @@ export default function TablePage({ params }: { params: Promise<{ id: string }> 
             );
           })}
         </div>
-      </div>
-
-      {/* Normal-flow sibling below the felt — never a fixed overlay on top of
-          it, so it can never cover a seat regardless of viewport height or
-          how tall its own content gets (raise slider, wrapped play buttons). */}
-      <div className="flex shrink-0 flex-col items-center gap-2 pb-2 pt-1 sm:items-end">
-        {/* One "Start" control for both engines: the dropdown lists every game
-            (poker variants and Clang alike), and starting deals whichever
-            engine is currently active or queued — resolved server-side. */}
-        <AnimatePresence>
-          {isOwner && !snapshot?.handInProgress && activeSeats >= 2 && (
-            <motion.div
-              key="start-hand"
-              initial={{ opacity: 0, scale: 0.9 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.9 }}
-              transition={{ duration: 0.2 }}
-            >
-              <NextGamePicker
-                games={games}
-                activeGameDefinitionId={snapshot?.nextGameDefinitionId}
-                onSelect={setNextGame}
-                onStart={startHand}
-              />
-            </motion.div>
-          )}
-        </AnimatePresence>
-
-        {isClang ? (
-          <AnimatePresence>
-            {mySeat && clangRound && clangRoundActive && (
-              <ClangActionPanel
-                key="clang-actions"
-                hand={myClangPlayer?.hand ?? []}
-                handValue={myClangPlayer?.handValue ?? null}
-                legalActions={clangRound.legalActions}
-                onPlay={clangPlay}
-                onEat={clangEat}
-                onPassEat={clangPassEat}
-                onCallClang={clangCallClang}
-                onCallClangInstant={clangCallClangInstant}
-              />
-            )}
-          </AnimatePresence>
-        ) : isCardFlip ? (
-          <AnimatePresence>
-            {mySeat && cardFlipRound && cardFlipRoundActive && (
-              <CardFlipActionPanel
-                key="cardflip-actions"
-                pileCounts={cardFlipRound.pileCounts}
-                legalActions={cardFlipRound.legalActions}
-                onDraw={cardFlipDraw}
-              />
-            )}
-          </AnimatePresence>
-        ) : (
-          <>
-            <AnimatePresence>
-              {mySeat && snapshot?.handInProgress && (
-                <ActionControls
-                  key="action-controls"
-                  legalActions={legalActions}
-                  pot={hand?.pot ?? 0}
-                  currentBet={currentBet}
-                  onAction={sendAction}
-                />
-              )}
-            </AnimatePresence>
-          </>
-        )}
-      </div>
 
       <LedgerModal tableId={tableId} open={ledgerOpen} onClose={() => setLedgerOpen(false)} />
+      <ChatPanel open={chatOpen} onClose={() => setChatOpen(false)} messages={chatMessages} viewerUserId={session.userId} onSend={sendChatMessage} />
     </main>
   );
 }

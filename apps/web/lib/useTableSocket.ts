@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { io, Socket } from "socket.io-client";
-import type { ClientToServerEvents, ServerToClientEvents, TableSnapshot } from "@5lapnow/shared-types";
+import type { ChatMessageView, ClientToServerEvents, ServerToClientEvents, TableSnapshot } from "@5lapnow/shared-types";
 import type { PlayerAction } from "@5lapnow/game-engine";
 import { api } from "./api";
 import { loadSession } from "./session";
@@ -18,9 +18,16 @@ export function useTableSocket(tableId: string | null) {
   const [error, setError] = useState<string | null>(null);
   const [isAuthError, setIsAuthError] = useState(false);
   const [connected, setConnected] = useState(false);
+  const [chatMessages, setChatMessages] = useState<ChatMessageView[]>([]);
+  // Separate from chatMessages: only ever set by a live chat:message event,
+  // never by chat:history — so a toast-on-latest-message effect keyed off
+  // this can't fire for an old message just because table:join replayed
+  // scrollback (e.g. on every reconnect).
+  const [lastLiveMessage, setLastLiveMessage] = useState<ChatMessageView | null>(null);
 
   useEffect(() => {
     if (!tableId) return; // wait until session is confirmed before connecting
+    setChatMessages([]); // avoid a stale flash of the previous table's messages
     const socket: AppSocket = io(API_URL, {
       withCredentials: true,
       transports: ["websocket"],
@@ -73,6 +80,11 @@ export function useTableSocket(tableId: string | null) {
     socket.on("disconnect", () => setConnected(false));
     socket.on("table:snapshot", (snap) => setSnapshot(snap));
     socket.on("action:error", (payload) => setError(payload.message));
+    socket.on("chat:history", (messages) => setChatMessages(messages));
+    socket.on("chat:message", (message) => {
+      setChatMessages((prev) => [...prev, message]);
+      setLastLiveMessage(message);
+    });
 
     return () => {
       socket.emit("table:leave", { tableId });
@@ -107,6 +119,7 @@ export function useTableSocket(tableId: string | null) {
   const clangCallClang = () => tableId && socketRef.current?.emit("clang:callClang", { tableId });
   const clangCallClangInstant = () => tableId && socketRef.current?.emit("clang:callClangInstant", { tableId });
   const cardFlipDraw = (pileIndex: number) => tableId && socketRef.current?.emit("cardflip:draw", { tableId, pileIndex });
+  const sendChatMessage = (body: string) => tableId && socketRef.current?.emit("chat:send", { tableId, body });
 
   return {
     snapshot,
@@ -114,6 +127,9 @@ export function useTableSocket(tableId: string | null) {
     isAuthError,
     retry,
     connected,
+    chatMessages,
+    lastLiveMessage,
+    sendChatMessage,
     requestSeat,
     approveRequest,
     rejectRequest,

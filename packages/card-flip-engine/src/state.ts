@@ -13,6 +13,13 @@ export interface CardFlipPayment {
   amount: number;
 }
 
+/** Per-round settlement bonuses, sourced from the table's CardFlipGameDefinition. */
+export interface CardFlipBonusConfig {
+  unopenedCardBonus: number;
+  straightFlushBonus: number;
+  fourOfAKindBonus: number;
+}
+
 export interface CardFlipRoundResult {
   winnerSeatIndices: number[];
   payments: CardFlipPayment[];
@@ -30,6 +37,7 @@ export interface CardFlipRoundState {
   stake: number;
   /** "X" — the MAXIMUM cards a player may draw on their turn. A turn ends as soon as the player's hand beats the current leader, even earlier than this cap; it only forces a stop if they never catch up. */
   cardsPerPlayer: number;
+  bonusConfig: CardFlipBonusConfig;
   phase: CardFlipPhase;
   /** Always 3 face-down draw piles, dealt evenly at round start. */
   piles: Card[][];

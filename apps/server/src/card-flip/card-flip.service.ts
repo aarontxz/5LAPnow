@@ -25,14 +25,12 @@ export class CardFlipService {
     return runtime;
   }
 
-  async startRound(tableId: string, requesterUserId: string, stake: number, cardsPerPlayer: number): Promise<void> {
+  async startRound(tableId: string, requesterUserId: string): Promise<void> {
     const runtime = this.tablesService.getRuntimeTable(tableId);
     if (requesterUserId !== runtime.ownerId) throw new ForbiddenException("Only the table owner can start a round");
     if (this.tablesService.isRoundInProgress(runtime)) {
       throw new BadRequestException("A hand or round is already in progress");
     }
-    if (stake <= 0) throw new BadRequestException("Stake must be positive");
-    if (cardsPerPlayer <= 0) throw new BadRequestException("Cards per player must be positive");
 
     // Flush any stack corrections queued while the previous round was live, exactly like poker's startHand does.
     for (const [seatIndex, adjustment] of runtime.pendingStackAdjustments) {
@@ -49,6 +47,7 @@ export class CardFlipService {
     runtime.nextGameOverride = null;
     const targetRow = await this.gamesService.getRow(targetGameDefinitionId);
     if (targetRow.engine !== "cardflip") throw new BadRequestException("Next game is not 10 Card Flip");
+    const config = await this.gamesService.getCardFlipDefinition(targetRow.id);
 
     if (runtime.gameKind !== "cardflip" || targetRow.id !== runtime.gameDefinitionId) {
       runtime.gameKind = "cardflip";
@@ -62,7 +61,7 @@ export class CardFlipService {
 
     const engine = new CardFlipEngine();
     runtime.gameCounter += 1;
-    runtime.cardFlipRound = engine.startRound(runtime.table, runtime.gameCounter, stake, cardsPerPlayer);
+    runtime.cardFlipRound = engine.startRound(runtime.table, runtime.gameCounter, config);
 
     await this.finish(tableId, runtime);
   }

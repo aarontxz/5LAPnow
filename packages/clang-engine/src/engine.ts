@@ -3,9 +3,6 @@ import { activeSeats, nextButtonSeatIndex, splitAmountEvenly, TableState } from 
 import { classifyHand, handValue, type ClangBonusPayouts } from "./scoring.js";
 import { ClangBonusHit, ClangPayment, ClangPlayerState, ClangRoundState } from "./state.js";
 
-/** Prefill defaults for the owner's "Deal" form — both are configurable per round. */
-export const DEFAULT_CLANG_STAKE = 5;
-export const DEFAULT_EAT_PAYMENT_PER_CARD = 2;
 export const MIN_CLANG_PLAYERS = 2;
 /** Above this many players, a single 52-card deck can't reliably support the game — a second deck is shuffled in. */
 export const SECOND_DECK_THRESHOLD = 5;

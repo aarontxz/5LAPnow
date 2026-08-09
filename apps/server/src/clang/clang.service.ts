@@ -27,14 +27,12 @@ export class ClangService {
     return runtime;
   }
 
-  async startRound(tableId: string, requesterUserId: string, stake: number, eatPaymentPerCard: number): Promise<void> {
+  async startRound(tableId: string, requesterUserId: string): Promise<void> {
     const runtime = this.tablesService.getRuntimeTable(tableId);
     if (requesterUserId !== runtime.ownerId) throw new ForbiddenException("Only the table owner can start a round");
     if (this.tablesService.isRoundInProgress(runtime)) {
       throw new BadRequestException("A hand or round is already in progress");
     }
-    if (stake <= 0) throw new BadRequestException("Stake must be positive");
-    if (eatPaymentPerCard < 0) throw new BadRequestException("Eat payment cannot be negative");
 
     // Flush any stack corrections queued while the previous round was live, exactly like poker's startHand does.
     for (const [seatIndex, adjustment] of runtime.pendingStackAdjustments) {
@@ -51,6 +49,7 @@ export class ClangService {
     runtime.nextGameOverride = null;
     const targetRow = await this.gamesService.getRow(targetGameDefinitionId);
     if (targetRow.engine !== "clang") throw new BadRequestException("Next game is not Clang");
+    const config = await this.gamesService.getClangDefinition(targetRow.id);
 
     if (runtime.gameKind !== "clang" || targetRow.id !== runtime.gameDefinitionId) {
       runtime.gameKind = "clang";
@@ -63,9 +62,15 @@ export class ClangService {
 
     const engine = new ClangEngine();
     runtime.gameCounter += 1;
-    runtime.clangRound = engine.startRound(runtime.table, runtime.gameCounter, stake, eatPaymentPerCard, DEFAULT_BONUS_PAYOUTS);
-    runtime.clangLastStake = stake;
-    runtime.clangLastEatPaymentPerCard = eatPaymentPerCard;
+    runtime.clangRound = engine.startRound(
+      runtime.table,
+      runtime.gameCounter,
+      config.stake,
+      config.eatPaymentPerCard,
+      DEFAULT_BONUS_PAYOUTS
+    );
+    runtime.clangLastStake = config.stake;
+    runtime.clangLastEatPaymentPerCard = config.eatPaymentPerCard;
 
     await this.finish(tableId, runtime);
   }

@@ -54,3 +54,16 @@ export function comparePartialHands(a: EvaluatedHand, b: EvaluatedHand): number 
 export function describePartialHand(cards: Card[]): string {
   return describeEvaluatedHand(evaluatePartialHand(cards), "high");
 }
+
+// Category indices match @5lapnow/cards' HandScore (0=high card .. 8=straight flush).
+const FOUR_OF_A_KIND_CATEGORY = 7;
+const STRAIGHT_FLUSH_CATEGORY = 8;
+
+export function isFourOfAKind(cards: Card[]): boolean {
+  return evaluatePartialHand(cards).score[0] === FOUR_OF_A_KIND_CATEGORY;
+}
+
+/** Only reachable at 5+ cards — straight and flush both require a full 5-card hand by definition. */
+export function isStraightFlush(cards: Card[]): boolean {
+  return evaluatePartialHand(cards).score[0] === STRAIGHT_FLUSH_CATEGORY;
+}

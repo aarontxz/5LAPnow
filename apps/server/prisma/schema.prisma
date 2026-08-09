@@ -17,6 +17,7 @@ model User {
   chipTransactions        ChipTransaction[]
   ownedTables             Table[]
   gameGenerationRequests  GameGenerationRequest[]
+  chatMessages            ChatMessage[]
 }
 
 enum GameDefinitionSource {
@@ -41,7 +42,9 @@ model GameDefinition {
   description String
   source      GameDefinitionSource
   engine      GameEngine           @default(poker)
-  /// Validated against the GameDefinition zod schema in @5lapnow/game-engine before being persisted. Null for non-poker engines (e.g. Clang, which has no streets/blinds to describe).
+  /// Shape depends on `engine`: DeclarativeEngine's GameDefinition zod schema (@5lapnow/game-engine) for poker,
+  /// ClangGameDefinition (@5lapnow/clang-engine) for Clang, or CardFlipGameDefinition (@5lapnow/card-flip-engine)
+  /// for Card Flip — each validated against its own schema before being persisted.
   definition  Json?
   createdById String?
   createdBy   User?                @relation(fields: [createdById], references: [id])
@@ -104,6 +107,7 @@ model Table {
   clangRounds      ClangRound[]
   cardFlipRounds   CardFlipRound[]
   chipTransactions ChipTransaction[]
+  chatMessages     ChatMessage[]
 }
 
 enum SeatStatus {
@@ -200,4 +204,20 @@ model ChipTransaction {
   type      ChipTransactionType
   amount    Int
   createdAt DateTime            @default(now())
+}
+
+/// Per-table chat. `displayName` is snapshotted at send time (like HandLogPlayer/
+/// ClangRoundLogPlayer) so history still reads correctly if the sender's name
+/// changes later.
+model ChatMessage {
+  id          String   @id @default(uuid())
+  tableId     String
+  table       Table    @relation(fields: [tableId], references: [id])
+  userId      String
+  user        User     @relation(fields: [userId], references: [id])
+  displayName String
+  body        String
+  createdAt   DateTime @default(now())
+
+  @@index([tableId, createdAt])
 }

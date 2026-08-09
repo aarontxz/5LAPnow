@@ -1,5 +1,10 @@
 import type { PlayerAction } from "@5lapnow/game-engine";
-import type { TableSnapshot } from "./dto.js";
+import type { ChatMessageView, TableSnapshot } from "./dto.js";
+
+export interface ChatSendPayload {
+  tableId: string;
+  body: string;
+}
 
 export interface SeatRequestPayload {
   tableId: string;
@@ -87,9 +92,15 @@ export interface ClientToServerEvents {
   "clang:callClangInstant": (payload: { tableId: string }) => void;
   /** On your turn: draw one card from pile 0, 1, or 2. */
   "cardflip:draw": (payload: CardFlipDrawPayload) => void;
+  /** Any seated-or-not visitor to the table can chat — trimmed and length-capped server-side. */
+  "chat:send": (payload: ChatSendPayload) => void;
 }
 
 export interface ServerToClientEvents {
   "table:snapshot": (snapshot: TableSnapshot) => void;
   "action:error": (payload: { message: string }) => void;
+  /** Sent once right after table:join, most-recent-last, so the panel has scrollback without a separate REST call. */
+  "chat:history": (messages: ChatMessageView[]) => void;
+  /** One new message, broadcast to everyone in the room (including the sender) as it's sent. */
+  "chat:message": (message: ChatMessageView) => void;
 }

@@ -4,6 +4,15 @@ import type { ClangHandCategory, ClangPayment, ClangPhase } from "@5lapnow/clang
 import type { CardFlipPayment, CardFlipPhase } from "@5lapnow/card-flip-engine";
 import type { TableGameKind } from "./rest.js";
 
+export interface ChatMessageView {
+  id: string;
+  userId: string;
+  /** Snapshotted at send time — stays accurate even if the sender's name changes later. */
+  displayName: string;
+  body: string;
+  createdAt: string;
+}
+
 export interface PublicSeatView {
   seatIndex: number;
   playerId: string | null;

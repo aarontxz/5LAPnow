@@ -25,6 +25,7 @@ export function Modal({
   children,
   size = "sm",
   variant = "dark",
+  overlayClassName,
 }: {
   open: boolean;
   onClose: () => void;
@@ -33,6 +34,8 @@ export function Modal({
   children: ReactNode;
   size?: "sm" | "md" | "lg";
   variant?: "dark" | "light";
+  /** Extra classes merged onto the fixed backdrop — e.g. to hide this modal presentation at a breakpoint where a caller renders an alternative. */
+  overlayClassName?: string;
 }) {
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
@@ -54,7 +57,7 @@ export function Modal({
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
           transition={{ duration: 0.15 }}
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
+          className={cn("fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4", overlayClassName)}
           onClick={onClose}
         >
           <motion.div

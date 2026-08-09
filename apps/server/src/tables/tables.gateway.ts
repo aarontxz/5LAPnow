@@ -10,6 +10,7 @@ import {
 import type { Server, Socket } from "socket.io";
 import type {
   CardFlipDrawPayload,
+  ChatSendPayload,
   ClangRankPayload,
   ClientToServerEvents,
   HandActionRequest,
@@ -20,8 +21,6 @@ import type {
   SeatRequestPayload,
   ServerToClientEvents,
 } from "@5lapnow/shared-types";
-import { DEFAULT_CLANG_STAKE, DEFAULT_EAT_PAYMENT_PER_CARD } from "@5lapnow/clang-engine";
-import { DEFAULT_CARD_FLIP_STAKE, DEFAULT_CARDS_PER_PLAYER } from "@5lapnow/card-flip-engine";
 import { TablesService } from "./tables.service";
 import { ClangService } from "../clang/clang.service";
 import { CardFlipService } from "../card-flip/card-flip.service";
@@ -110,6 +109,7 @@ export class TablesGateway implements OnGatewayInit, OnModuleInit {
     try {
       const snapshot = this.tablesService.getSnapshot(payload.tableId, socket.data.userId ?? null);
       socket.emit("table:snapshot", snapshot);
+      socket.emit("chat:history", await this.tablesService.getRecentChatMessages(payload.tableId));
     } catch (err) {
       socket.emit("action:error", { message: (err as Error).message });
     }
@@ -206,9 +206,9 @@ export class TablesGateway implements OnGatewayInit, OnModuleInit {
     await this.guard(socket, async () => {
       const nextKind = await this.tablesService.resolveNextGameKind(payload.tableId);
       if (nextKind === "clang") {
-        await this.clangService.startRound(payload.tableId, socket.data.userId, DEFAULT_CLANG_STAKE, DEFAULT_EAT_PAYMENT_PER_CARD);
+        await this.clangService.startRound(payload.tableId, socket.data.userId);
       } else if (nextKind === "cardflip") {
-        await this.cardFlipService.startRound(payload.tableId, socket.data.userId, DEFAULT_CARD_FLIP_STAKE, DEFAULT_CARDS_PER_PLAYER);
+        await this.cardFlipService.startRound(payload.tableId, socket.data.userId);
       } else {
         await this.tablesService.startHand(payload.tableId, socket.data.userId);
       }
@@ -285,6 +285,14 @@ export class TablesGateway implements OnGatewayInit, OnModuleInit {
     await this.guard(socket, async () => {
       const seatIndex = this.requireSeatIndex(payload.tableId, socket.data.userId);
       await this.cardFlipService.draw(payload.tableId, seatIndex, payload.pileIndex);
+    });
+  }
+
+  @SubscribeMessage("chat:send")
+  async onChatSend(@ConnectedSocket() socket: AppSocket, @MessageBody() payload: ChatSendPayload): Promise<void> {
+    await this.guard(socket, async () => {
+      const message = await this.tablesService.sendChatMessage(payload.tableId, socket.data.userId, payload.body);
+      this.server.to(roomFor(payload.tableId)).emit("chat:message", message);
     });
   }
 
