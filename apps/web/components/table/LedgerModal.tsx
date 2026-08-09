@@ -49,7 +49,7 @@ export function LedgerModal({
   }, [open, tableId]);
 
   return (
-    <Modal open={open} onClose={onClose} title="Log & Ledger" size="lg" variant="light">
+    <Modal open={open} onClose={onClose} title="ledger" size="lg" variant="light">
       <div className="flex h-full flex-col">
         <div className="mb-4 flex shrink-0 gap-6 border-b border-neutral-200 text-sm">
           <button
