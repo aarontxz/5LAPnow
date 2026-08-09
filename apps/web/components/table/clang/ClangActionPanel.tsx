@@ -55,7 +55,7 @@ export function ClangActionPanel({
   const groups = groupByRank(hand);
 
   return (
-    <ActionBar growsOnMobile={false}>
+    <ActionBar growsOnMobile={false} bare>
       {(canEat || canPassEat) && (
         <div className="flex items-center gap-2">
           <span className="text-xs text-amber-300">You can eat!</span>
@@ -88,13 +88,13 @@ export function ClangActionPanel({
       )}
 
       {(canPlay || canCallClangNormal) && (
-        <div className="flex flex-wrap items-center justify-center gap-1.5">
+        <div className="flex flex-nowrap items-center justify-center gap-1.5 overflow-x-auto">
           {groups.map(({ rank, cards }) => (
             <button
               key={rank}
               disabled={!canPlay}
               onClick={() => onPlay(rank)}
-              className="flex flex-col items-center gap-0.5 rounded-lg border border-white/10 bg-white/5 p-1 hover:border-purple-400/50 hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-40"
+              className="flex shrink-0 flex-col items-center gap-0.5 rounded-lg border border-white/10 bg-white/5 p-1 hover:border-purple-400/50 hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-40"
             >
               <div className="flex gap-0.5">
                 {cards.map((c, i) => (

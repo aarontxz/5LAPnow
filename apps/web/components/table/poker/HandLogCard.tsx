@@ -3,6 +3,7 @@
 import type { HandActionLogEntry } from "@5lapnow/game-engine";
 import type { HandLogEntry } from "@5lapnow/shared-types";
 import { PlayingCard } from "../PlayingCard";
+import { LogCard, LogCardHeader } from "../LogCard";
 import { cn } from "@/lib/cn";
 
 function actionLabel(action: HandActionLogEntry): string {
@@ -57,17 +58,8 @@ export function HandLogCard({ hand: h, expanded, onToggle }: { hand: HandLogEntr
   const streets = actionsByStreet(h.actions);
 
   return (
-    <button
-      onClick={onToggle}
-      className={cn(
-        "h-fit rounded-lg border border-neutral-200 bg-neutral-50 px-3 py-3 text-left text-sm",
-        expanded && "sm:col-span-2 lg:col-span-3"
-      )}
-    >
-      <div className="flex items-center justify-between">
-        <span className="font-medium text-neutral-900">Hand #{h.handNumber} · {h.gameName}</span>
-        <span className="text-xs text-neutral-400">{new Date(h.playedAt).toLocaleTimeString()}</span>
-      </div>
+    <LogCard expanded={expanded} onToggle={onToggle}>
+      <LogCardHeader title={`Hand #${h.handNumber} · ${h.gameName}`} playedAt={h.playedAt} />
       {h.boards && h.boards.length > 1 ? (
         <div className="mt-2 flex flex-col gap-1.5">
           {h.boards.map((boardCards, bi) => {
@@ -139,6 +131,6 @@ export function HandLogCard({ hand: h, expanded, onToggle }: { hand: HandLogEntr
           {streets.length === 0 && <p className="text-xs text-neutral-400">No betting action this hand.</p>}
         </div>
       )}
-    </button>
+    </LogCard>
   );
 }

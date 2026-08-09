@@ -40,9 +40,18 @@ export const ActionBar = forwardRef<
      * space for exactly once, here.
      */
     growsOnMobile: boolean;
+    /**
+     * Skips the divider/background/blur chrome, leaving just layout and
+     * positioning — each individual button already carries its own
+     * background, so Clang/Card Flip (whose buttons are meant to read as
+     * floating directly over the felt) pass this instead of sitting inside
+     * another dark bar on top of it. Poker keeps the chrome (default) since
+     * its buttons are flush pills that need a bar to visually anchor to.
+     */
+    bare?: boolean;
     children: ReactNode;
   }
->(function ActionBar({ growsOnMobile, children }, ref) {
+>(function ActionBar({ growsOnMobile, bare, children }, ref) {
   return (
     <motion.div
       ref={ref}
@@ -51,7 +60,8 @@ export const ActionBar = forwardRef<
       exit={{ opacity: 0, y: 16 }}
       transition={{ duration: 0.2, ease: "easeOut" }}
       className={cn(
-        "fixed inset-x-0 bottom-0 z-40 flex w-full flex-col gap-1.5 border-t border-white/10 bg-black/60 p-1.5 backdrop-blur-md sm:static sm:inset-auto sm:w-full sm:max-w-md sm:gap-3 sm:rounded-xl sm:border sm:bg-black/40 sm:p-3 sm:shadow-2xl",
+        "fixed inset-x-0 bottom-0 z-40 flex w-full flex-col gap-1.5 p-1.5 sm:static sm:inset-auto sm:w-full sm:max-w-md sm:gap-3 sm:p-3",
+        !bare && "border-t border-white/10 bg-black/60 backdrop-blur-md sm:rounded-xl sm:border sm:bg-black/40 sm:shadow-2xl",
         !growsOnMobile &&
           `${FIXED_ACTION_BAR_HEIGHT_CLASS} items-center justify-center overflow-y-auto pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:h-auto sm:justify-start sm:overflow-visible sm:pb-3`
       )}

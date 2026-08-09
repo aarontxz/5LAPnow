@@ -16,7 +16,7 @@ export function CardFlipActionPanel({
   if (!legalActions || !legalActions.canDraw) return null;
 
   return (
-    <ActionBar growsOnMobile={false}>
+    <ActionBar growsOnMobile={false} bare>
       <span className="text-xs text-emerald-300">Your turn — draw from a pile</span>
       <div className="flex items-center justify-center gap-3">
         {pileCounts.map((count, i) => (

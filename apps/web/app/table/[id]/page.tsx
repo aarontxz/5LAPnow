@@ -813,6 +813,7 @@ export default function TablePage({ params }: { params: Promise<{ id: string }> 
                       kind: "cardflip",
                       cardFlipPlayer: cardFlipRound?.players.find((p) => p.seatIndex === seat.seatIndex),
                       isLeader: cardFlipRound?.leaderSeatIndex === seat.seatIndex,
+                      cardsPerPlayer: cardFlipRound?.cardsPerPlayer ?? 0,
                     }}
                   />
                 ) : (

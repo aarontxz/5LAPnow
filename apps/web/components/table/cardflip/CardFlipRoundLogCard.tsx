@@ -2,6 +2,7 @@
 
 import type { CardFlipRoundLogEntry } from "@5lapnow/shared-types";
 import { PlayingCard } from "../PlayingCard";
+import { LogCard, LogCardHeader } from "../LogCard";
 import { cn } from "@/lib/cn";
 
 type CardFlipActionLogEntry = CardFlipRoundLogEntry["actions"][number];
@@ -45,17 +46,8 @@ export function CardFlipRoundLogCard({
     .sort((a, b) => b.net - a.net);
 
   return (
-    <button
-      onClick={onToggle}
-      className={cn(
-        "h-fit rounded-lg border border-neutral-200 bg-neutral-50 px-3 py-3 text-left text-sm",
-        expanded && "sm:col-span-2 lg:col-span-3"
-      )}
-    >
-      <div className="flex items-center justify-between">
-        <span className="font-medium text-neutral-900">Hand #{r.roundNumber} · 10 Card Flip</span>
-        <span className="text-xs text-neutral-400">{new Date(r.playedAt).toLocaleTimeString()}</span>
-      </div>
+    <LogCard expanded={expanded} onToggle={onToggle}>
+      <LogCardHeader title={`Hand #${r.roundNumber} · 10 Card Flip`} playedAt={r.playedAt} />
       <div className="mt-1 text-xs text-neutral-500">
         stake {r.stake} · beat the leader (max {r.cardsPerPlayer} cards)
       </div>
@@ -98,6 +90,6 @@ export function CardFlipRoundLogCard({
           </div>
         </div>
       )}
-    </button>
+    </LogCard>
   );
 }

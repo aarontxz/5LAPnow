@@ -5,4 +5,6 @@ export interface CardFlipSeatGameProps {
   kind: "cardflip";
   cardFlipPlayer: CardFlipPlayerView | undefined;
   isLeader: boolean;
+  /** The round's target hand size, so each seat can show "count/cardsPerPlayer". */
+  cardsPerPlayer: number;
 }
