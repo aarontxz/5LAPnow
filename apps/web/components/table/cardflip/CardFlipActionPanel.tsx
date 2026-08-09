@@ -1,8 +1,8 @@
 "use client";
 
-import { motion } from "framer-motion";
 import type { CardFlipLegalActions } from "@5lapnow/shared-types";
 import { PlayingCard } from "../PlayingCard";
+import { ActionBar } from "../ActionBar";
 
 export function CardFlipActionPanel({
   pileCounts,
@@ -16,13 +16,7 @@ export function CardFlipActionPanel({
   if (!legalActions || !legalActions.canDraw) return null;
 
   return (
-    <motion.div
-      initial={{ opacity: 0, y: 10 }}
-      animate={{ opacity: 1, y: 0 }}
-      exit={{ opacity: 0, y: 10 }}
-      transition={{ duration: 0.2 }}
-      className="flex flex-col items-center gap-2 rounded-2xl border border-white/10 bg-black/70 p-3 shadow-2xl backdrop-blur"
-    >
+    <ActionBar growsOnMobile={false}>
       <span className="text-xs text-emerald-300">Your turn — draw from a pile</span>
       <div className="flex items-center justify-center gap-3">
         {pileCounts.map((count, i) => (
@@ -37,6 +31,6 @@ export function CardFlipActionPanel({
           </button>
         ))}
       </div>
-    </motion.div>
+    </ActionBar>
   );
 }

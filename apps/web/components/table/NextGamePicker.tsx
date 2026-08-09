@@ -37,7 +37,10 @@ export function NextGamePicker({
   }, [open]);
 
   return (
-    <div ref={rootRef} className="flex w-64 flex-col items-end gap-1.5">
+    // flex-col-reverse so the dropdown (first in visual order here) opens
+    // upward above the button stack instead of downward — the control sits
+    // at the bottom of the screen, so a downward dropdown would run off it.
+    <div ref={rootRef} className="flex w-64 flex-col-reverse items-end gap-1.5">
       {/* Stacked button */}
       <div className="flex w-full flex-col overflow-hidden rounded-2xl shadow-lg">
         {/* Game name + change-game trigger */}
@@ -49,7 +52,7 @@ export function NextGamePicker({
           >
             <span className="truncate">{activeName}</span>
             <motion.span
-              animate={{ rotate: open ? 180 : 0 }}
+              animate={{ rotate: open ? 0 : 180 }}
               transition={{ duration: 0.15 }}
               className="text-xs leading-none"
             >
@@ -78,9 +81,9 @@ export function NextGamePicker({
       <AnimatePresence>
         {open && (
           <motion.div
-            initial={{ opacity: 0, scale: 0.95, y: 4 }}
+            initial={{ opacity: 0, scale: 0.95, y: -4 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
-            exit={{ opacity: 0, scale: 0.95, y: 4 }}
+            exit={{ opacity: 0, scale: 0.95, y: -4 }}
             transition={{ duration: 0.15 }}
             className="w-full overflow-hidden rounded-2xl border border-white/10 bg-black/90 shadow-2xl backdrop-blur-sm"
           >

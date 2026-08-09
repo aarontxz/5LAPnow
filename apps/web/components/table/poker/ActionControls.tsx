@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import type { LegalActionInfo, PlayerAction } from "@5lapnow/game-engine";
+import { ActionBar } from "../ActionBar";
 
 function HotkeyHint({ letter }: { letter: string }) {
   return (
@@ -137,14 +138,7 @@ export function ActionControls({
   }, [isMyTurn, canCheck, canCall, canBetOrRaise, onAction]);
 
   return (
-    <motion.div
-      ref={panelRef}
-      initial={{ opacity: 0, y: 16 }}
-      animate={{ opacity: 1, y: 0 }}
-      exit={{ opacity: 0, y: 16 }}
-      transition={{ duration: 0.25, ease: "easeOut" }}
-      className="fixed inset-x-0 bottom-0 z-40 flex w-full flex-col gap-1.5 border-t border-white/10 bg-black/60 p-1.5 backdrop-blur-md sm:static sm:inset-auto sm:w-full sm:max-w-md sm:gap-3 sm:rounded-xl sm:border sm:bg-black/40 sm:p-3"
-    >
+    <ActionBar ref={panelRef} growsOnMobile>
       <div className="flex gap-2 sm:gap-3">
         <motion.button
           whileHover={isMyTurn && canBetOrRaise ? { scale: 1.03 } : undefined}
@@ -266,6 +260,6 @@ export function ActionControls({
           </motion.div>
         )}
       </AnimatePresence>
-    </motion.div>
+    </ActionBar>
   );
 }

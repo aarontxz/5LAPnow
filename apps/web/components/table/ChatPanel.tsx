@@ -120,26 +120,31 @@ export function ChatPanel({
   return (
     <>
       {/* Mobile: centered card over a translucent backdrop — same
-          presentation as LedgerModal. Hidden at sm+ via overlayClassName so
-          it doesn't double up with the desktop floating card below. */}
-      <Modal open={open} onClose={onClose} title="Chat" size="lg" variant="dark" overlayClassName="sm:hidden">
+          presentation as LedgerModal, but deliberately small (`size="chat"`)
+          so most of the screen stays visible dimmed behind it, rather than
+          the card covering the table entirely. Hidden at sm+ via
+          overlayClassName so it doesn't double up with the desktop floating
+          card below. No `title` prop — we supply our own flush ChatHeader
+          instead of Modal's padded one, matching the desktop card's layout. */}
+      <Modal open={open} onClose={onClose} size="chat" variant="dark" overlayClassName="sm:hidden">
         <div className="flex h-full flex-col">
+          <ChatHeader onClose={onClose} />
           <ChatMessages messages={messages} viewerUserId={viewerUserId} listRef={mobileListRef} />
           <ChatComposer onSend={onSend} />
         </div>
       </Modal>
 
-      {/* Desktop: floating card docked bottom-left, opening upward from
-          the Chat button's own corner — fixed, so it overlaps the empty
-          space beside the felt instead of pushing anything over. */}
+      {/* Desktop: floating card docked top-right, opening downward from the
+          Chat button's own corner — fixed, so it overlaps the empty space
+          beside the felt instead of pushing anything over. */}
       <AnimatePresence>
         {open && (
           <motion.div
-            initial={{ opacity: 0, y: 12 }}
+            initial={{ opacity: 0, y: -12 }}
             animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: 12 }}
+            exit={{ opacity: 0, y: -12 }}
             transition={{ duration: 0.2, ease: "easeOut" }}
-            className="fixed bottom-20 left-4 z-40 hidden h-[65vh] w-72 flex-col rounded-2xl border border-white/10 bg-neutral-900 shadow-2xl sm:flex sm:bottom-24 sm:left-6 sm:w-80"
+            className="fixed right-4 top-20 z-40 hidden h-[65vh] w-72 flex-col rounded-2xl border border-white/10 bg-neutral-900 shadow-2xl sm:flex sm:right-6 sm:top-24 sm:w-80"
           >
             <ChatHeader onClose={onClose} />
             <ChatMessages messages={messages} viewerUserId={viewerUserId} listRef={desktopListRef} />

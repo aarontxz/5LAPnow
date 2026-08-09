@@ -9,6 +9,11 @@ const SIZE_CLASS = {
   sm: "w-full max-w-xs p-5",
   md: "w-[95vw] max-w-2xl p-5 sm:p-6",
   lg: "h-[90vh] w-[95vw] max-w-6xl p-5 sm:p-6",
+  // Deliberately small footprint, no padding (content manages its own) — leaves
+  // most of the translucent backdrop visible so whatever's behind (the table)
+  // still shows through dimmed, instead of the card blocking nearly the
+  // whole screen the way `lg` does.
+  chat: "h-[65vh] w-[88vw] max-w-sm p-0",
 } as const;
 
 /**
@@ -32,7 +37,7 @@ export function Modal({
   title?: string;
   subtitle?: string;
   children: ReactNode;
-  size?: "sm" | "md" | "lg";
+  size?: "sm" | "md" | "lg" | "chat";
   variant?: "dark" | "light";
   /** Extra classes merged onto the fixed backdrop — e.g. to hide this modal presentation at a breakpoint where a caller renders an alternative. */
   overlayClassName?: string;

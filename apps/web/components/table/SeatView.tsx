@@ -429,7 +429,7 @@ export function SeatView({
                   (game.kind === "clang" && game.clangPlayer?.justDrewLastCard) ||
                   (game.kind === "cardflip" && game.cardFlipPlayer?.justDrewLastCard);
                 const isNewCard = isNew && i === cards!.length - 1;
-                const shouldFan = cards!.length >= 5;
+                const shouldFan = cards!.length >= 6;
                 return (
                   <motion.div
                     key={`up-${i}-${c.rank}-${c.suit}`}

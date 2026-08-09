@@ -1,9 +1,9 @@
 "use client";
 
-import { motion } from "framer-motion";
 import type { Card } from "@5lapnow/cards";
 import type { ClangLegalActions } from "@5lapnow/shared-types";
 import { PlayingCard } from "../PlayingCard";
+import { ActionBar } from "../ActionBar";
 
 const RANK_LABELS: Record<number, string> = { 11: "J", 12: "Q", 13: "K", 14: "A" };
 
@@ -55,13 +55,7 @@ export function ClangActionPanel({
   const groups = groupByRank(hand);
 
   return (
-    <motion.div
-      initial={{ opacity: 0, y: 10 }}
-      animate={{ opacity: 1, y: 0 }}
-      exit={{ opacity: 0, y: 10 }}
-      transition={{ duration: 0.2 }}
-      className="flex flex-col items-center gap-2 rounded-2xl border border-white/10 bg-black/70 p-3 shadow-2xl backdrop-blur"
-    >
+    <ActionBar growsOnMobile={false}>
       {(canEat || canPassEat) && (
         <div className="flex items-center gap-2">
           <span className="text-xs text-amber-300">You can eat!</span>
@@ -128,6 +122,6 @@ export function ClangActionPanel({
           </button>
         </div>
       )}
-    </motion.div>
+    </ActionBar>
   );
 }

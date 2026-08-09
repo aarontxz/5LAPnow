@@ -16,7 +16,9 @@ import { AnimatedNumber } from "@/components/table/AnimatedNumber";
 import { LedgerModal } from "@/components/table/LedgerModal";
 import { ChatPanel } from "@/components/table/ChatPanel";
 import { NextGamePicker } from "@/components/table/NextGamePicker";
+import { FIXED_ACTION_BAR_RESERVE_CLASS } from "@/components/table/ActionBar";
 import { relativeSeatIndex, seatPosition, chipDirection } from "@/lib/seatLayout";
+import { cn } from "@/lib/cn";
 
 function netForSeat(payments: Array<{ fromSeatIndex: number; toSeatIndex: number; amount: number }>, seatIndex: number): number {
   let net = 0;
@@ -41,6 +43,13 @@ export default function TablePage({ params }: { params: Promise<{ id: string }> 
   const [chatOpen, setChatOpen] = useState(false);
   const [linkCopied, setLinkCopied] = useState(false);
   const [games, setGames] = useState<Array<{ id: string; name: string; description: string }>>([]);
+  // Seats near each other can overlap on small screens (SeatView's width/hand-fan
+  // grows past the felt's per-seat spacing) — raising one above its neighbors on
+  // hover (desktop) or tap (touch) lets it be read in full. Each seat's wrapper
+  // div gets its own stacking context (it has a `transform` for centering), so
+  // this has to live here and drive that wrapper's z-index rather than anything
+  // inside SeatView.
+  const [raisedSeatIndex, setRaisedSeatIndex] = useState<number | null>(null);
   const {
     snapshot,
     error,
@@ -371,27 +380,32 @@ export default function TablePage({ params }: { params: Promise<{ id: string }> 
   return (
     <main className="relative h-dvh w-full overflow-hidden">
       {/* Corner-docked chrome around a table that fills the screen, mirroring
-          a traditional poker-room UI — viewer controls top-left, owner's
-          Start control top-right, Log/Share/Chat bottom-left, live turn
-          actions bottom-right. Same layout at every breakpoint (just tighter
-          offsets on phones); each corner is `fixed` and lives outside the
-          felt's own centering, so none of this ever competes with the table
-          for layout space or nudges it off-center. */}
+          a traditional poker-room UI — viewer controls top-left, Log/Share/
+          Chat top-right, Start control + live turn actions stacked
+          bottom-right. Same layout at every breakpoint (just tighter offsets
+          on phones), so PC and phone match — and both menu buttons and the
+          own-seat controls stay up top, clear of the action panel/raise
+          slider growing at the bottom. Each corner is `fixed` and lives
+          outside the felt's own centering, so none of this ever competes
+          with the table for layout space or nudges it off-center. */}
       <div className="pointer-events-none fixed inset-0 z-30">
         <div className="pointer-events-auto absolute left-2 top-2 flex max-w-[55vw] flex-wrap items-center gap-1.5 sm:left-6 sm:top-6 sm:max-w-none sm:gap-2">
           {renderSeatControls()}
         </div>
-        {/* Start control lives top-right on phones, but sits alongside the
-            action buttons bottom-right on PC — same corner the live turn
-            actions occupy, since the two are mutually exclusive in time
-            (Start only shows before a hand/round starts, the action panel
-            only once one is running). */}
-        <div className="pointer-events-auto absolute right-2 top-2 max-w-[45vw] sm:hidden">{renderStartControl()}</div>
-        <div className="pointer-events-auto absolute bottom-2 left-2 flex max-w-[60vw] flex-wrap items-center gap-1.5 sm:bottom-6 sm:left-6 sm:max-w-none sm:gap-2">
+        <div className="pointer-events-auto absolute right-2 top-2 flex max-w-[60vw] flex-wrap items-center justify-end gap-1.5 sm:right-6 sm:top-6 sm:max-w-none sm:gap-2">
           {renderMenuButtons()}
         </div>
+        {/* Start only shows before a hand/round starts, the action panel only
+            once one is running — mutually exclusive in time, so they never
+            fight for the same spot even though they're positioned
+            separately below. The start control is centered on phones (it's
+            the one control a seated player is most likely to reach for
+            one-handed) but docks bottom-right from `sm:` up to match the
+            action panel and the rest of the corner-docked chrome. */}
+        <div className="pointer-events-auto absolute inset-x-0 bottom-2 flex justify-center sm:inset-x-auto sm:bottom-6 sm:right-6 sm:justify-end">
+          {renderStartControl()}
+        </div>
         <div className="pointer-events-auto absolute bottom-2 right-2 flex max-w-[92vw] flex-col items-end gap-2 sm:bottom-6 sm:right-6 sm:max-w-none">
-          <div className="hidden sm:block">{renderStartControl()}</div>
           {renderActionPanel()}
         </div>
       </div>
@@ -434,12 +448,22 @@ export default function TablePage({ params }: { params: Promise<{ id: string }> 
         </div>
       )}
 
-      {/* The felt is always fixed, dead-centered on the viewport. No
-          surrounding chrome is ever a normal-flow sibling of it (see the
-          corner-docked chrome above, which folds the action panel into its
-          bottom-right corner), so nothing can ever nudge it off-center or
-          compete with it for layout space. */}
-      <div className="fixed left-1/2 top-1/2 aspect-[5/7] h-[78vh] w-auto max-w-[94vw] -translate-x-1/2 -translate-y-1/2 rounded-2xl border border-emerald-900/50 bg-gradient-to-b from-emerald-950 to-emerald-900 shadow-2xl sm:aspect-[5/6] sm:h-[80vh] sm:max-w-[90vw]">
+      {/* The felt is always fixed. No surrounding chrome is ever a
+          normal-flow sibling of it (see the corner-docked chrome above,
+          which folds the action panel into its bottom-right corner), so
+          nothing can ever nudge it off-center or compete with it for layout
+          space. Dead-centered on the viewport normally — but Clang/Card
+          Flip's action panel becomes a fixed-height (10rem) full-width bar
+          pinned to the bottom of the screen on phones (unlike poker's,
+          which never grows there), so on mobile those two reserve that
+          strip via top/bottom insets instead of centering over it. Desktop
+          never has this problem (that panel is just a small corner card
+          there), so sm+ always reverts to true centering. */}
+      <div
+        className={`fixed left-1/2 aspect-[5/7] w-auto max-w-[94vw] -translate-x-1/2 rounded-2xl border border-emerald-900/50 bg-gradient-to-b from-emerald-950 to-emerald-900 shadow-2xl sm:left-1/2 sm:top-1/2 sm:aspect-[5/6] sm:h-[80vh] sm:max-w-[90vw] sm:-translate-y-1/2 sm:bottom-auto ${
+          isClang || isCardFlip ? `top-20 ${FIXED_ACTION_BAR_RESERVE_CLASS}` : "top-1/2 h-[78vh] -translate-y-1/2"
+        }`}
+      >
           <div className="absolute left-1/2 top-1/2 flex -translate-x-1/2 -translate-y-1/2 flex-col items-center gap-1 sm:gap-2">
             {isClang ? (
               <>
@@ -750,8 +774,21 @@ export default function TablePage({ params }: { params: Promise<{ id: string }> 
             return (
               <div
                 key={seat.seatIndex}
-                className="absolute -translate-x-1/2 -translate-y-1/2"
+                className={cn(
+                  "absolute -translate-x-1/2 -translate-y-1/2",
+                  raisedSeatIndex === seat.seatIndex ? "z-20" : "z-0"
+                )}
                 style={pos}
+                onMouseEnter={() => setRaisedSeatIndex(seat.seatIndex)}
+                onMouseLeave={() => setRaisedSeatIndex((cur) => (cur === seat.seatIndex ? null : cur))}
+                onPointerDown={(e) => {
+                  // Only touch/pen taps toggle here — mouse is already handled by
+                  // hover above, and letting a click also toggle would immediately
+                  // un-raise a seat the cursor is still hovering (mouseenter already
+                  // fired, so there's no second enter event to re-raise it).
+                  if (e.pointerType === "mouse") return;
+                  setRaisedSeatIndex((cur) => (cur === seat.seatIndex ? null : seat.seatIndex));
+                }}
               >
                 {isClang ? (
                   <SeatView
