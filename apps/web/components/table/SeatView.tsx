@@ -15,7 +15,10 @@ import type { CardFlipSeatGameProps } from "./cardflip/seatGameProps";
 // max-w caps the box so a big hand (Clang/Card Flip can run past poker's 2
 // cards, up to 10) wraps into multiple rows instead of growing wider than
 // the viewport — side seats near the felt's left/right edge would otherwise
-// push cards off-screen on mobile with nothing to force a wrap.
+// push cards off-screen on mobile with nothing to force a wrap. Sized to
+// comfortably fit HAND_FAN_THRESHOLD - 1 (5) full-size, unfanned small
+// PlayingCards with margin to spare — see that constant's comment for the
+// exact math this is paired with.
 // w-max is load-bearing: this box is absolutely positioned with a `left`
 // offset (see page.tsx) and centered afterward via -translate-x-1/2. Without
 // an explicit width, the browser's shrink-to-fit sizing for `width: auto`
@@ -27,17 +30,16 @@ import type { CardFlipSeatGameProps } from "./cardflip/seatGameProps";
 // max-content) sizes purely off the content, ignoring that positional
 // constraint, so every seat's card fan wraps identically regardless of
 // where it sits on the felt.
-const SEAT_BOX = "min-h-20 min-w-20 max-w-28 w-max sm:min-h-32 sm:min-w-44 sm:max-w-56";
-// Below this many cards, an unfanned (normally spaced, gap-0.5) row of small
-// PlayingCards (32px wide + 2px gap each, see PlayingCard.tsx's `small`
-// size) still fits inside SEAT_BOX's max-w-28 (112px, minus ~12px padding =
-// ~100px content width). At 3 cards that's already 32*3 + 2*2 = 100px — the
-// edge of what fits — so 3 is the first count that gets fanned (compacted
-// via negative-margin overlap) instead of trusting it to fit unfanned.
-// Every hand-card row (own hand, opponents' face-down counts, Clang, Card
-// Flip) reads this same constant, so it can't drift into two different
-// thresholds the way it did before.
-const HAND_FAN_THRESHOLD = 3;
+const SEAT_BOX = "min-h-20 min-w-20 max-w-52 w-max sm:min-h-32 sm:min-w-44 sm:max-w-64";
+// A hand of 5 or fewer cards renders full-size and unfanned (normally
+// spaced via gap-0.5) rather than overlapped — SEAT_BOX's max-w is sized to
+// fit exactly that (5 small PlayingCards: 32px + 2px gap each = 168px content,
+// well inside max-w-52's 208px). Only once a hand grows past 5 (Clang/Card
+// Flip can run up to 10) does it switch to a fanned overlap to stay compact
+// instead of continuing to grow the box. Every hand-card row (own hand,
+// opponents' face-down counts, Clang, Card Flip) reads this one constant,
+// so it can't drift into two different thresholds the way it did before.
+const HAND_FAN_THRESHOLD = 6;
 const EMPTY_BOX_CLASS = cn(
   SEAT_BOX,
   "flex flex-col items-center justify-center gap-1 rounded-xl border border-dashed border-white/20 bg-neutral-800 p-1.5 sm:p-2"
