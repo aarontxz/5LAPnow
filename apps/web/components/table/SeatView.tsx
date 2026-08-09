@@ -443,9 +443,15 @@ export function SeatView({
         // stays on as a fallback for extreme hand sizes. Poker's 2 cards
         // never need it, so they just sit normally spaced. One loop handles
         // both known cards and an opponent's face-down placeholders (`c` is
-        // just null in that case) — see HAND_FAN_THRESHOLD's comment for why
-        // this used to be two separately-maintained branches.
-        <div className={cn("flex flex-wrap justify-center", !shouldFan && "gap-0.5 sm:gap-1")}>
+        // just null in that case) — see MOBILE/DESKTOP_HAND_FAN_THRESHOLD's
+        // comment for why this used to be two separately-maintained branches.
+        <div
+          className={cn(
+            "flex flex-wrap justify-center",
+            shouldFanMobile ? "gap-0" : "gap-0.5",
+            shouldFanDesktop ? "sm:gap-0" : "sm:gap-1"
+          )}
+        >
           {Array.from({ length: handLength }).map((_, i) => {
             const c = cards ? cards[i] : null;
             const isNewCard = !!c && justDrewLastCard && i === handLength - 1;
@@ -465,7 +471,12 @@ export function SeatView({
                     : { y: 0, boxShadow: "0 0 0px rgba(251,191,36,0)" }
                 }
                 transition={isNewCard ? { duration: 1.1, repeat: Infinity, repeatType: "reverse", ease: "easeInOut" } : { duration: 0.2 }}
-                className={cn("rounded-sm", i > 0 && shouldFan && "-ml-4 sm:-ml-5", isNewCard && "z-10 ring-2 ring-amber-400")}
+                className={cn(
+                  "rounded-sm",
+                  i > 0 && (shouldFanMobile ? "-ml-4" : "ml-0"),
+                  i > 0 && (shouldFanDesktop ? "sm:-ml-5" : "sm:ml-0"),
+                  isNewCard && "z-10 ring-2 ring-amber-400"
+                )}
               >
                 {/* Starts strictly after Card Flip's pile has already reverted to
                     face-down (CARD_FLIP_PILE_REVEAL_MS = 500ms in page.tsx) — the

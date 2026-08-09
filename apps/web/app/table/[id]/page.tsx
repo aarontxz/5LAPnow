@@ -249,7 +249,7 @@ export default function TablePage({ params }: { params: Promise<{ id: string }> 
           className="flex shrink-0 items-center gap-1.5 rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-medium text-white/70 shadow-sm hover:border-white/20 hover:bg-white/10 hover:text-white sm:px-3.5 sm:py-2 sm:text-sm"
         >
           <span aria-hidden>📒</span>
-          Log &amp; Ledger
+          Ledger
         </motion.button>
         <motion.button
           whileHover={{ scale: 1.03 }}
@@ -382,7 +382,7 @@ export default function TablePage({ params }: { params: Promise<{ id: string }> 
         <div className="pointer-events-auto absolute left-2 top-2 flex max-w-[55vw] flex-wrap items-center gap-1.5 sm:left-6 sm:top-6 sm:max-w-none sm:gap-2">
           {renderSeatControls()}
         </div>
-        <div className="pointer-events-auto absolute right-2 top-2 flex max-w-[60vw] flex-wrap items-center justify-end gap-1.5 sm:right-6 sm:top-6 sm:max-w-none sm:gap-2">
+        <div className="pointer-events-auto absolute right-2 top-2 flex max-w-[85vw] flex-wrap items-center justify-end gap-1.5 sm:right-6 sm:top-6 sm:max-w-none sm:gap-2">
           {renderMenuButtons()}
         </div>
         {/* Start only shows before a hand/round starts, the action panel only
