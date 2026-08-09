@@ -451,7 +451,7 @@ export default function TablePage({ params }: { params: Promise<{ id: string }> 
           there), so sm+ always reverts to true centering. */}
       <div
         className={`fixed left-1/2 aspect-[5/7] w-auto max-w-[94vw] -translate-x-1/2 rounded-2xl border border-emerald-900/50 bg-gradient-to-b from-emerald-950 to-emerald-900 shadow-2xl sm:left-1/2 sm:top-1/2 sm:aspect-[5/6] sm:h-[80vh] sm:max-w-[90vw] sm:-translate-y-1/2 sm:bottom-auto ${
-          isClang || isCardFlip ? `top-20 ${FIXED_ACTION_BAR_RESERVE_CLASS}` : "top-1/2 h-[78vh] -translate-y-1/2"
+          isClang || isCardFlip ? `top-14 ${FIXED_ACTION_BAR_RESERVE_CLASS}` : "top-1/2 h-[78vh] -translate-y-1/2"
         }`}
       >
           <div className="absolute left-1/2 top-1/2 flex -translate-x-1/2 -translate-y-1/2 flex-col items-center gap-1 sm:gap-2">
