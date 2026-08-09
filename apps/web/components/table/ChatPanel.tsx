@@ -118,25 +118,22 @@ export function ChatPanel({
   }, [open, messages.length]);
 
   return (
-    <AnimatePresence>
-      {open && (
-        <>
-          {/* Mobile: full-screen, covers the table */}
-          <motion.div
-            initial={{ opacity: 0, y: 16 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: 16 }}
-            transition={{ duration: 0.2, ease: "easeOut" }}
-            className="fixed inset-0 z-50 flex flex-col bg-neutral-900 sm:hidden"
-          >
-            <ChatHeader onClose={onClose} />
-            <ChatMessages messages={messages} viewerUserId={viewerUserId} listRef={mobileListRef} />
-            <ChatComposer onSend={onSend} />
-          </motion.div>
+    <>
+      {/* Mobile: centered card over a translucent backdrop — same
+          presentation as LedgerModal. Hidden at sm+ via overlayClassName so
+          it doesn't double up with the desktop floating card below. */}
+      <Modal open={open} onClose={onClose} title="Chat" size="lg" variant="dark" overlayClassName="sm:hidden">
+        <div className="flex h-full flex-col">
+          <ChatMessages messages={messages} viewerUserId={viewerUserId} listRef={mobileListRef} />
+          <ChatComposer onSend={onSend} />
+        </div>
+      </Modal>
 
-          {/* Desktop: floating card docked bottom-left, opening upward from
-              the Chat button's own corner — fixed, so it overlaps the empty
-              space beside the felt instead of pushing anything over. */}
+      {/* Desktop: floating card docked bottom-left, opening upward from
+          the Chat button's own corner — fixed, so it overlaps the empty
+          space beside the felt instead of pushing anything over. */}
+      <AnimatePresence>
+        {open && (
           <motion.div
             initial={{ opacity: 0, y: 12 }}
             animate={{ opacity: 1, y: 0 }}
@@ -148,8 +145,8 @@ export function ChatPanel({
             <ChatMessages messages={messages} viewerUserId={viewerUserId} listRef={desktopListRef} />
             <ChatComposer onSend={onSend} />
           </motion.div>
-        </>
-      )}
-    </AnimatePresence>
+        )}
+      </AnimatePresence>
+    </>
   );
 }
