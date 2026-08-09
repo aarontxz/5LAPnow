@@ -11,9 +11,12 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4001";
 
 type AppSocket = Socket<ServerToClientEvents, ClientToServerEvents>;
 
+const ACTION_ERROR_DISPLAY_MS = 5000;
+
 export function useTableSocket(tableId: string | null) {
   const socketRef = useRef<AppSocket | null>(null);
   const healRef = useRef<() => void>(() => {});
+  const actionErrorTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [snapshot, setSnapshot] = useState<TableSnapshot | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isAuthError, setIsAuthError] = useState(false);
@@ -67,11 +70,13 @@ export function useTableSocket(tableId: string | null) {
 
     socket.on("connect", () => {
       setConnected(true);
+      if (actionErrorTimeoutRef.current) clearTimeout(actionErrorTimeoutRef.current);
       setError(null);
       setIsAuthError(false);
       socket.emit("table:join", { tableId });
     });
     socket.on("connect_error", (err) => {
+      if (actionErrorTimeoutRef.current) clearTimeout(actionErrorTimeoutRef.current);
       setError(err.message);
       const authError = err.message.includes("No valid guest session");
       setIsAuthError(authError);
@@ -79,7 +84,15 @@ export function useTableSocket(tableId: string | null) {
     });
     socket.on("disconnect", () => setConnected(false));
     socket.on("table:snapshot", (snap) => setSnapshot(snap));
-    socket.on("action:error", (payload) => setError(payload.message));
+    socket.on("action:error", (payload) => {
+      // Transient, past-tense feedback ("that raise was too small") — unlike a
+      // connect_error, there's no ongoing problem for the user to act on, so
+      // it shouldn't linger on screen forever. Re-arms on every new error
+      // instead of letting an earlier timeout clear a message it didn't set.
+      setError(payload.message);
+      if (actionErrorTimeoutRef.current) clearTimeout(actionErrorTimeoutRef.current);
+      actionErrorTimeoutRef.current = setTimeout(() => setError(null), ACTION_ERROR_DISPLAY_MS);
+    });
     socket.on("chat:history", (messages) => setChatMessages(messages));
     socket.on("chat:message", (message) => {
       setChatMessages((prev) => [...prev, message]);
@@ -87,6 +100,7 @@ export function useTableSocket(tableId: string | null) {
     });
 
     return () => {
+      if (actionErrorTimeoutRef.current) clearTimeout(actionErrorTimeoutRef.current);
       socket.emit("table:leave", { tableId });
       socket.disconnect();
     };
