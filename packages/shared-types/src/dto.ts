@@ -21,8 +21,6 @@ export interface PublicSeatView {
   status: SeatStatus;
   /** Owner queued a stack change while a hand was in progress; takes effect when the next hand starts. */
   pendingStackAdjustment: number | null;
-  /** Player asked to stand up mid-hand; they'll auto-check/fold on their turns until the hand ends, then be removed. */
-  leavingAfterHand: boolean;
 }
 
 export interface HandPlayerView {

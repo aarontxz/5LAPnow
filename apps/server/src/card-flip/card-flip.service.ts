@@ -156,7 +156,5 @@ export class CardFlipService {
         });
       }
     }
-
-    await this.tablesService.settleStandRequests(runtime);
   }
 }

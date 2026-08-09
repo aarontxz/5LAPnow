@@ -217,7 +217,5 @@ export class ClangService {
         });
       }
     }
-
-    await this.tablesService.settleStandRequests(runtime);
   }
 }

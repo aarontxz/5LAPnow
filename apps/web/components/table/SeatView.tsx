@@ -433,9 +433,6 @@ export function SeatView({
         <span className="text-[9px] font-medium text-amber-300 sm:text-[10px]">→ {seat.pendingStackAdjustment} next {game.kind === "poker" ? "hand" : "round"}</span>
       )}
       {seat.status === "sitting-out" && <span className="text-[9px] font-bold text-white/40 sm:text-[10px]">AWAY</span>}
-      {seat.leavingAfterHand && (
-        <span className="text-[9px] font-bold text-red-400 sm:text-[10px]">LEAVING AFTER {game.kind === "poker" ? "HAND" : "ROUND"}</span>
-      )}
       {isEatCandidate && <span className="text-[9px] font-bold text-amber-300 sm:text-[10px]">CAN EAT</span>}
       {handLength > 0 && (
         // A fanned overlap (each card after the first pulled left, later ones

@@ -63,7 +63,6 @@ export default function TablePage({ params }: { params: Promise<{ id: string }> 
     removePlayer,
     setSeatAway,
     transferOwnership,
-    stand,
     startHand,
     setNextGame,
     sendAction,
@@ -262,7 +261,7 @@ export default function TablePage({ params }: { params: Promise<{ id: string }> 
               : "border-white/10 bg-white/5 text-white/70 hover:border-white/20 hover:bg-white/10 hover:text-white"
           }`}
         >
-          <span aria-hidden>{linkCopied ? "✅" : "🔗"}</span>
+          <span aria-hidden>{linkCopied ? "" : "🔗"}</span>
           {linkCopied ? "Copied!" : "Share"}
         </motion.button>
         <motion.button
@@ -286,25 +285,16 @@ export default function TablePage({ params }: { params: Promise<{ id: string }> 
   function renderSeatControls() {
     if (!mySeat) return null;
     return (
-      <>
-        <button
-          onClick={() => setSeatAway(mySeatIndex!, mySeat.status !== "sitting-out")}
-          className={`rounded-full border px-3 py-1.5 text-xs font-medium transition-colors ${
-            mySeat.status === "sitting-out"
-              ? "border-amber-400/50 bg-amber-400/10 text-amber-300 hover:bg-amber-400/20"
-              : "border-white/10 bg-white/5 text-white/50 hover:border-white/20 hover:text-white/80"
-          }`}
-        >
-          {mySeat.status === "sitting-out" ? "Back" : "Away"}
-        </button>
-        <button
-          onClick={stand}
-          disabled={mySeat.leavingAfterHand}
-          className="rounded-full border border-red-500/30 bg-red-500/10 px-3 py-1.5 text-xs font-medium text-red-400 transition-colors hover:bg-red-500/20 hover:text-red-300 disabled:cursor-default disabled:border-white/10 disabled:bg-transparent disabled:text-white/30"
-        >
-          {mySeat.leavingAfterHand ? "Leaving…" : "Stand up"}
-        </button>
-      </>
+      <button
+        onClick={() => setSeatAway(mySeatIndex!, mySeat.status !== "sitting-out")}
+        className={`rounded-full border px-3 py-1.5 text-xs font-medium transition-colors ${
+          mySeat.status === "sitting-out"
+            ? "border-amber-400/50 bg-amber-400/10 text-amber-300 hover:bg-amber-400/20"
+            : "border-white/10 bg-white/5 text-white/50 hover:border-white/20 hover:text-white/80"
+        }`}
+      >
+        {mySeat.status === "sitting-out" ? "Back" : "Away"}
+      </button>
     );
   }
 

@@ -67,8 +67,6 @@ export interface RuntimeTable {
   pendingRequests: SeatRequestState[];
   /** Keyed by seatIndex; applied at the start of the next hand/round (see TablesService.startHand / ClangService.startRound). */
   pendingStackAdjustments: Map<number, PendingStackAdjustment>;
-  /** Seats (by seatIndex) that asked to stand up mid-hand/round; auto-check/folded (poker) or held over (clang) until it completes, then evicted. */
-  standRequests: Set<number>;
   /** One-hand game override set by the owner; cleared at the start of the next hand. Poker-only. */
   nextGameOverride: NextGameOverride | null;
 }
@@ -234,7 +232,6 @@ export function buildTableSnapshot(runtime: RuntimeTable, viewerUserId: string |
       stack: s.stack,
       status: s.status,
       pendingStackAdjustment: pending && pending.userId === s.playerId ? resolvePendingStackAdjustment(s.stack, pending) : null,
-      leavingAfterHand: runtime.standRequests.has(s.seatIndex),
     };
   });
 

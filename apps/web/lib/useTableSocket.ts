@@ -106,7 +106,6 @@ export function useTableSocket(tableId: string | null) {
   const setSeatAway = (seatIndex: number, away: boolean) =>
     tableId && socketRef.current?.emit("seat:setAway", { tableId, seatIndex, away });
   const transferOwnership = (seatIndex: number) => tableId && socketRef.current?.emit("table:transferOwnership", { tableId, seatIndex });
-  const stand = () => tableId && socketRef.current?.emit("seat:stand", { tableId });
   const startHand = () => tableId && socketRef.current?.emit("table:startHand", { tableId });
   const setNextGame = (gameDefinitionId: string) =>
     tableId && socketRef.current?.emit("table:setNextGame", { tableId, gameDefinitionId });
@@ -138,7 +137,6 @@ export function useTableSocket(tableId: string | null) {
     removePlayer,
     setSeatAway,
     transferOwnership,
-    stand,
     startHand,
     setNextGame,
     sendAction,

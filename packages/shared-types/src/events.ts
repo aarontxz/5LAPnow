@@ -63,7 +63,6 @@ export interface ClientToServerEvents {
   "seat:approve": (payload: SeatApprovalPayload) => void;
   "seat:reject": (payload: { tableId: string; requestId: string }) => void;
   "seat:cancelRequest": (payload: { tableId: string; requestId: string }) => void;
-  "seat:stand": (payload: { tableId: string }) => void;
   /** Owner-only: sets a seated player's stack directly, recorded as a buy-in/cash-out delta. */
   "seat:adjustStack": (payload: SeatAdjustStackPayload) => void;
   /** Owner-only: forcibly stands another player up. */

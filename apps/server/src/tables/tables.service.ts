@@ -117,7 +117,6 @@ export class TablesService implements OnModuleInit {
         clangLastEatPaymentPerCard: null,
         pendingRequests: [],
         pendingStackAdjustments: new Map(),
-        standRequests: new Set(),
         nextGameOverride: null,
       });
     }
@@ -179,7 +178,6 @@ export class TablesService implements OnModuleInit {
       clangLastEatPaymentPerCard: null,
       pendingRequests: [],
       pendingStackAdjustments: new Map(),
-      standRequests: new Set(),
       nextGameOverride: null,
     });
 
@@ -319,33 +317,11 @@ export class TablesService implements OnModuleInit {
     });
   }
 
-  /**
-   * Standing up mid-hand can't remove the seat immediately — the live hand's
-   * betting round and pot math still reference it. Instead the seat is
-   * flagged to auto-check (or auto-fold, if facing a bet) on its turns for
-   * the rest of THIS hand; `advanceHand` evicts it once the hand completes.
-   */
-  async stand(tableId: string, seatIndex: number, userId: string): Promise<void> {
-    const runtime = this.getRuntimeTable(tableId);
-    const seat = runtime.table.seats[seatIndex];
-    if (!seat || seat.playerId !== userId) throw new ForbiddenException("You are not seated there");
-
-    if (!this.isRoundInProgress(runtime)) {
-      await this.clearSeat(runtime, seatIndex, userId);
-      this.emitChanged(tableId);
-      return;
-    }
-
-    runtime.standRequests.add(seatIndex);
-    await this.advanceHand(tableId, runtime);
-    this.emitChanged(tableId);
-  }
-
-  /** Owner-only forced removal — same accounting as a self-service stand. */
+  /** Owner-only: removes a seated player. Blocked while a hand/round is actually live — the pot/turn-order math still references that seat mid-hand — but fine any time between hands. */
   async removePlayer(tableId: string, seatIndex: number, ownerUserId: string): Promise<void> {
     const runtime = this.getRuntimeTable(tableId);
     if (ownerUserId !== runtime.ownerId) throw new ForbiddenException("Only the table owner can remove players");
-    if (runtime.hand && runtime.hand.phase !== "complete") {
+    if (this.isRoundInProgress(runtime)) {
       throw new BadRequestException("Cannot remove a player while a hand is in progress");
     }
     const seat = runtime.table.seats[seatIndex];
@@ -365,7 +341,6 @@ export class TablesService implements OnModuleInit {
   private async clearSeat(runtime: RuntimeTable, seatIndex: number, userId: string): Promise<void> {
     const remainingStack = standPlayer(runtime.table, seatIndex);
     runtime.pendingStackAdjustments.delete(seatIndex);
-    runtime.standRequests.delete(seatIndex);
 
     await this.prisma.seat.update({
       where: { tableId_seatIndex: { tableId: runtime.tableId, seatIndex } },
@@ -610,21 +585,18 @@ export class TablesService implements OnModuleInit {
   }
 
   /**
-   * Auto-checks/folds through any seats that asked to stand up mid-hand OR
-   * are currently marked away — an away player already dealt into this hand
-   * shouldn't be able to stall everyone else waiting on their turn — settles
-   * the showdown once the hand reaches it, and — once the hand is fully
-   * complete — actually evicts every seat still waiting to leave (away seats
-   * are only skipped for the hand, not evicted). Called after every real
-   * action and at hand start, so neither case ever stalls the table.
+   * Auto-checks/folds through any seats currently marked away — an away
+   * player already dealt into this hand shouldn't be able to stall everyone
+   * else waiting on their turn — and settles the showdown once the hand
+   * reaches it. Called after every real action and at hand start, so an
+   * away player never stalls the table.
    */
   private async advanceHand(tableId: string, runtime: RuntimeTable): Promise<void> {
     const hand = runtime.hand;
     if (!hand || !runtime.gameDefinition) return;
     const engine = new DeclarativeEngine(runtime.gameDefinition);
 
-    const shouldAutoPlay = (seatIndex: number) =>
-      runtime.standRequests.has(seatIndex) || runtime.table.seats[seatIndex]?.status === "sitting-out";
+    const shouldAutoPlay = (seatIndex: number) => runtime.table.seats[seatIndex]?.status === "sitting-out";
 
     while (
       hand.phase === "betting" &&
@@ -640,21 +612,6 @@ export class TablesService implements OnModuleInit {
     if (hand.phase === "showdown") {
       const result = engine.evaluateShowdown(runtime.table, hand);
       await this.persistHandResult(tableId, runtime, result.pots);
-    }
-
-    if (hand.phase === "complete") {
-      await this.settleStandRequests(runtime);
-    }
-  }
-
-  async settleStandRequests(runtime: RuntimeTable): Promise<void> {
-    for (const seatIndex of [...runtime.standRequests]) {
-      const seat = runtime.table.seats[seatIndex];
-      if (seat?.playerId) {
-        await this.clearSeat(runtime, seatIndex, seat.playerId);
-      } else {
-        runtime.standRequests.delete(seatIndex);
-      }
     }
   }
 

@@ -186,15 +186,6 @@ export class TablesGateway implements OnGatewayInit, OnModuleInit {
     await this.guard(socket, () => this.tablesService.transferOwnership(payload.tableId, payload.seatIndex, socket.data.userId));
   }
 
-  @SubscribeMessage("seat:stand")
-  async onStand(@ConnectedSocket() socket: AppSocket, @MessageBody() payload: { tableId: string }): Promise<void> {
-    await this.guard(socket, async () => {
-      const runtime = this.tablesService.getRuntimeTable(payload.tableId);
-      const seat = runtime.table.seats.find((s) => s.playerId === socket.data.userId);
-      if (seat) await this.tablesService.stand(payload.tableId, seat.seatIndex, socket.data.userId);
-    });
-  }
-
   /**
    * The one owner-facing "Start" button covers every engine: it deals the
    * next hand/round using whatever game is currently active or queued via
