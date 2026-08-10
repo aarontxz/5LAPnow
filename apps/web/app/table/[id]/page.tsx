@@ -14,6 +14,7 @@ import { PlayingCard } from "@/components/table/PlayingCard";
 import { ActionControls } from "@/components/table/poker/ActionControls";
 import { AnimatedNumber } from "@/components/table/AnimatedNumber";
 import { LedgerModal } from "@/components/table/LedgerModal";
+import { GameSettingsModal } from "@/components/table/GameSettingsModal";
 import { ChatPanel } from "@/components/table/ChatPanel";
 import { NextGamePicker } from "@/components/table/NextGamePicker";
 import { FIXED_ACTION_BAR_RESERVE_CLASS } from "@/components/table/ActionBar";
@@ -40,6 +41,7 @@ export default function TablePage({ params }: { params: Promise<{ id: string }> 
   // Socket only connects once the cookie is confirmed alive; null keeps it idle.
   const [readyTableId, setReadyTableId] = useState<string | null>(null);
   const [ledgerOpen, setLedgerOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const [chatOpen, setChatOpen] = useState(false);
   const [linkCopied, setLinkCopied] = useState(false);
   const [games, setGames] = useState<Array<{ id: string; name: string; description: string }>>([]);
@@ -65,6 +67,7 @@ export default function TablePage({ params }: { params: Promise<{ id: string }> 
     transferOwnership,
     startHand,
     setNextGame,
+    setGameConfig,
     sendAction,
     revealRabbit,
     showCards,
@@ -284,18 +287,29 @@ export default function TablePage({ params }: { params: Promise<{ id: string }> 
   }
 
   function renderSeatControls() {
-    if (!mySeat) return null;
     return (
-      <button
-        onClick={() => setSeatAway(mySeatIndex!, mySeat.status !== "sitting-out")}
-        className={`rounded-full border px-3 py-1.5 text-xs font-medium transition-colors ${
-          mySeat.status === "sitting-out"
-            ? "border-amber-400/50 bg-amber-400/10 text-amber-300 hover:bg-amber-400/20"
-            : "border-white/10 bg-white/5 text-white/50 hover:border-white/20 hover:text-white/80"
-        }`}
-      >
-        {mySeat.status === "sitting-out" ? "Back" : "Away"}
-      </button>
+      <>
+        {isOwner && (
+          <button
+            onClick={() => setSettingsOpen(true)}
+            className="rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-medium text-white/50 transition-colors hover:border-white/20 hover:text-white/80"
+          >
+            ⚙️ Settings
+          </button>
+        )}
+        {mySeat && (
+          <button
+            onClick={() => setSeatAway(mySeatIndex!, mySeat.status !== "sitting-out")}
+            className={`rounded-full border px-3 py-1.5 text-xs font-medium transition-colors ${
+              mySeat.status === "sitting-out"
+                ? "border-amber-400/50 bg-amber-400/10 text-amber-300 hover:bg-amber-400/20"
+                : "border-white/10 bg-white/5 text-white/50 hover:border-white/20 hover:text-white/80"
+            }`}
+          >
+            {mySeat.status === "sitting-out" ? "Back" : "Away"}
+          </button>
+        )}
+      </>
     );
   }
 
@@ -830,6 +844,13 @@ export default function TablePage({ params }: { params: Promise<{ id: string }> 
         </div>
 
       <LedgerModal tableId={tableId} open={ledgerOpen} onClose={() => setLedgerOpen(false)} />
+      <GameSettingsModal
+        tableId={tableId}
+        open={settingsOpen}
+        onClose={() => setSettingsOpen(false)}
+        canEdit={!snapshot?.handInProgress && !clangRoundActive && !cardFlipRoundActive}
+        onSave={setGameConfig}
+      />
       <ChatPanel open={chatOpen} onClose={() => setChatOpen(false)} messages={chatMessages} viewerUserId={session.userId} onSend={sendChatMessage} />
     </main>
   );

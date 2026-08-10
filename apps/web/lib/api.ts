@@ -3,6 +3,7 @@ import type {
   CreateGuestSessionRequest,
   CreateGuestSessionResponse,
   CreateTableRequest,
+  EffectiveGameConfig,
   GameGenerationRequestView,
   TableLedgerResponse,
   TableSnapshot,
@@ -53,4 +54,5 @@ export const api = {
   getTableSnapshot: (id: string, viewerUserId?: string) =>
     request<TableSnapshot>(`/tables/${id}${viewerUserId ? `?viewerUserId=${encodeURIComponent(viewerUserId)}` : ""}`),
   getLedger: (id: string) => request<TableLedgerResponse>(`/tables/${id}/ledger`),
+  getGameConfig: (id: string) => request<EffectiveGameConfig>(`/tables/${id}/game-config`),
 };

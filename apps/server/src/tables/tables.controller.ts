@@ -23,4 +23,9 @@ export class TablesController {
   getLedger(@Param("id") id: string) {
     return this.tablesService.getLedger(id);
   }
+
+  @Get(":id/game-config")
+  getGameConfig(@Param("id") id: string) {
+    return this.tablesService.getGameConfig(id);
+  }
 }

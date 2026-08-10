@@ -49,7 +49,10 @@ export class ClangService {
     runtime.nextGameOverride = null;
     const targetRow = await this.gamesService.getRow(targetGameDefinitionId);
     if (targetRow.engine !== "clang") throw new BadRequestException("Next game is not Clang");
-    const config = await this.gamesService.getClangDefinition(targetRow.id);
+    const baseConfig = await this.gamesService.getClangDefinition(targetRow.id);
+    // Owner's Settings override layered on top — never mutates the (globally
+    // shared) GameDefinition row itself, see TablesService.setGameConfig.
+    const config = { ...baseConfig, ...runtime.gameConfigOverrides.clang };
 
     if (runtime.gameKind !== "clang" || targetRow.id !== runtime.gameDefinitionId) {
       runtime.gameKind = "clang";

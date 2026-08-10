@@ -13,6 +13,7 @@ import {
   HandView,
   PublicSeatView,
   SeatRequestView,
+  TableGameConfigOverrides,
   TableGameKind,
   TableSnapshot,
 } from "@5lapnow/shared-types";
@@ -69,6 +70,8 @@ export interface RuntimeTable {
   pendingStackAdjustments: Map<number, PendingStackAdjustment>;
   /** One-hand game override set by the owner; cleared at the start of the next hand. Poker-only. */
   nextGameOverride: NextGameOverride | null;
+  /** Owner-configured per-engine value overrides (blinds/ante, stake, ...) — see TableGameConfigOverrides. Persisted on Table.gameConfigOverrides, mirrored here for the hot path. */
+  gameConfigOverrides: TableGameConfigOverrides;
 }
 
 /**

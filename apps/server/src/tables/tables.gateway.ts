@@ -20,6 +20,7 @@ import type {
   SeatIndexPayload,
   SeatRequestPayload,
   ServerToClientEvents,
+  SetGameConfigPayload,
 } from "@5lapnow/shared-types";
 import { TablesService } from "./tables.service";
 import { ClangService } from "../clang/clang.service";
@@ -209,6 +210,11 @@ export class TablesGateway implements OnGatewayInit, OnModuleInit {
   @SubscribeMessage("table:setNextGame")
   async onSetNextGame(@ConnectedSocket() socket: AppSocket, @MessageBody() payload: { tableId: string; gameDefinitionId: string }): Promise<void> {
     await this.guard(socket, () => this.tablesService.setNextGame(payload.tableId, socket.data.userId, payload.gameDefinitionId));
+  }
+
+  @SubscribeMessage("table:setGameConfig")
+  async onSetGameConfig(@ConnectedSocket() socket: AppSocket, @MessageBody() payload: SetGameConfigPayload): Promise<void> {
+    await this.guard(socket, () => this.tablesService.setGameConfig(payload.tableId, socket.data.userId, payload));
   }
 
   @SubscribeMessage("hand:revealRabbit")

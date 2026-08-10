@@ -8,16 +8,16 @@ datasource db {
 }
 
 model User {
-  id                      String                   @id @default(uuid())
+  id                     String                  @id @default(uuid())
   /// Not collected until the guest first requests a seat at a table; nameless guests can browse the lobby freely.
-  displayName             String?
-  createdAt               DateTime                 @default(now())
-  gameDefinitions         GameDefinition[]
-  seats                   Seat[]
-  chipTransactions        ChipTransaction[]
-  ownedTables             Table[]
-  gameGenerationRequests  GameGenerationRequest[]
-  chatMessages            ChatMessage[]
+  displayName            String?
+  createdAt              DateTime                @default(now())
+  gameDefinitions        GameDefinition[]
+  seats                  Seat[]
+  chipTransactions       ChipTransaction[]
+  ownedTables            Table[]
+  gameGenerationRequests GameGenerationRequest[]
+  chatMessages           ChatMessage[]
 }
 
 enum GameDefinitionSource {
@@ -37,20 +37,20 @@ enum GameEngine {
 }
 
 model GameDefinition {
-  id          String               @id
-  name        String
-  description String
-  source      GameDefinitionSource
-  engine      GameEngine           @default(poker)
+  id                 String                  @id
+  name               String
+  description        String
+  source             GameDefinitionSource
+  engine             GameEngine              @default(poker)
   /// Shape depends on `engine`: DeclarativeEngine's GameDefinition zod schema (@5lapnow/game-engine) for poker,
   /// ClangGameDefinition (@5lapnow/clang-engine) for Clang, or CardFlipGameDefinition (@5lapnow/card-flip-engine)
   /// for Card Flip — each validated against its own schema before being persisted.
-  definition  Json?
-  createdById String?
-  createdBy   User?                @relation(fields: [createdById], references: [id])
-  createdAt   DateTime             @default(now())
-  tables      Table[]
-  hands       Hand[]
+  definition         Json?
+  createdById        String?
+  createdBy          User?                   @relation(fields: [createdById], references: [id])
+  createdAt          DateTime                @default(now())
+  tables             Table[]
+  hands              Hand[]
   generationRequests GameGenerationRequest[]
 }
 
@@ -84,30 +84,35 @@ enum TableStatus {
 }
 
 model Table {
-  id               String         @id @default(uuid())
-  name             String?
+  id                  String            @id @default(uuid())
+  name                String?
   /// Determines the table's game mode: DeclarativeEngine (poker) or ClangEngine, via gameDefinition.engine.
-  gameDefinitionId String
-  gameDefinition   GameDefinition @relation(fields: [gameDefinitionId], references: [id])
+  gameDefinitionId    String
+  gameDefinition      GameDefinition    @relation(fields: [gameDefinitionId], references: [id])
   /// The table owner approves seat requests and sets/edits approved buy-ins; defaults to whoever created the table.
-  ownerId          String
-  owner            User           @relation(fields: [ownerId], references: [id])
+  ownerId             String
+  owner               User              @relation(fields: [ownerId], references: [id])
   /// Meaningless for Clang tables (null there).
-  smallBlind       Int?
-  bigBlind         Int?
-  minBuyIn         Int
-  maxBuyIn         Int
-  maxSeats         Int            @default(10)
-  status           TableStatus    @default(waiting)
-  buttonSeatIndex  Int?
-  rotation         Json?
-  createdAt        DateTime       @default(now())
-  seats            Seat[]
-  hands            Hand[]
-  clangRounds      ClangRound[]
-  cardFlipRounds   CardFlipRound[]
-  chipTransactions ChipTransaction[]
-  chatMessages     ChatMessage[]
+  smallBlind          Int?
+  bigBlind            Int?
+  minBuyIn            Int
+  maxBuyIn            Int
+  maxSeats            Int               @default(10)
+  status              TableStatus       @default(waiting)
+  buttonSeatIndex     Int?
+  rotation            Json?
+  /// Owner-configured per-engine overrides on top of the active GameDefinition's values —
+  /// keyed by engine ("poker"/"clang"/"cardflip") since a table can switch engines; see
+  /// TableGameConfigOverrides in @5lapnow/shared-types. Null/absent keys mean "use the
+  /// GameDefinition's own value". Never mutates the (globally shared) GameDefinition row itself.
+  gameConfigOverrides Json?
+  createdAt           DateTime          @default(now())
+  seats               Seat[]
+  hands               Hand[]
+  clangRounds         ClangRound[]
+  cardFlipRounds      CardFlipRound[]
+  chipTransactions    ChipTransaction[]
+  chatMessages        ChatMessage[]
 }
 
 enum SeatStatus {
@@ -167,7 +172,7 @@ model ClangRound {
   players           Json
   /// Ordered ClangActionLogEntry[] (deal/bonus/play/eat/eatDeclined/draw/callClangInstant/callClang/forcedShowdown)
   actions           Json     @default("[]")
-  playedAt    DateTime @default(now())
+  playedAt          DateTime @default(now())
 }
 
 /// "10 Card Flip" round history, parallel to ClangRound — three shared draw piles,

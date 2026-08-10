@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { io, Socket } from "socket.io-client";
-import type { ChatMessageView, ClientToServerEvents, ServerToClientEvents, TableSnapshot } from "@5lapnow/shared-types";
+import type { ChatMessageView, ClientToServerEvents, ServerToClientEvents, SetGameConfigPayload, TableSnapshot } from "@5lapnow/shared-types";
 import type { PlayerAction } from "@5lapnow/game-engine";
 import { api } from "./api";
 import { loadSession } from "./session";
@@ -123,6 +123,8 @@ export function useTableSocket(tableId: string | null) {
   const startHand = () => tableId && socketRef.current?.emit("table:startHand", { tableId });
   const setNextGame = (gameDefinitionId: string) =>
     tableId && socketRef.current?.emit("table:setNextGame", { tableId, gameDefinitionId });
+  const setGameConfig = (config: Omit<SetGameConfigPayload, "tableId">) =>
+    tableId && socketRef.current?.emit("table:setGameConfig", { tableId, ...config });
   const sendAction = (action: PlayerAction) => tableId && socketRef.current?.emit("hand:action", { tableId, action });
   const revealRabbit = () => tableId && socketRef.current?.emit("hand:revealRabbit", { tableId });
   const showCards = () => tableId && socketRef.current?.emit("hand:showCards", { tableId });
@@ -154,6 +156,7 @@ export function useTableSocket(tableId: string | null) {
     transferOwnership,
     startHand,
     setNextGame,
+    setGameConfig,
     sendAction,
     revealRabbit,
     showCards,

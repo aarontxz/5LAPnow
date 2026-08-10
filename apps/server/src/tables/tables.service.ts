@@ -16,8 +16,11 @@ import type {
   ChatMessageView,
   ClangRoundLogEntry,
   CreateTableRequest,
+  EffectiveGameConfig,
   HandLogEntry,
   PlayerLedgerEntry,
+  SetGameConfigPayload,
+  TableGameConfigOverrides,
   TableLedgerResponse,
   TableSummary,
 } from "@5lapnow/shared-types";
@@ -118,6 +121,7 @@ export class TablesService implements OnModuleInit {
         pendingRequests: [],
         pendingStackAdjustments: new Map(),
         nextGameOverride: null,
+        gameConfigOverrides: (row.gameConfigOverrides as TableGameConfigOverrides | null) ?? {},
       });
     }
   }
@@ -179,6 +183,7 @@ export class TablesService implements OnModuleInit {
       pendingRequests: [],
       pendingStackAdjustments: new Map(),
       nextGameOverride: null,
+      gameConfigOverrides: {},
     });
 
     return this.toSummary(row.id);
@@ -477,7 +482,13 @@ export class TablesService implements OnModuleInit {
     // — which may itself be switching the table's engine (e.g. coming from Clang or Card Flip).
     const targetGameDefinitionId = runtime.nextGameOverride?.gameDefinitionId ?? runtime.gameDefinitionId;
     runtime.nextGameOverride = null;
-    const gameDefinition = await this.gamesService.getDefinition(targetGameDefinitionId);
+    const baseGameDefinition = await this.gamesService.getDefinition(targetGameDefinitionId);
+    // Owner's Settings override (blinds/ante) layered on top — never mutates the
+    // (globally shared) GameDefinition row itself, see TablesService.setGameConfig.
+    const pokerOverride = runtime.gameConfigOverrides.poker;
+    const gameDefinition = pokerOverride
+      ? { ...baseGameDefinition, forcedBets: { ...baseGameDefinition.forcedBets, ...pokerOverride } }
+      : baseGameDefinition;
 
     if (runtime.gameKind !== "poker" || gameDefinition.id !== runtime.gameDefinitionId) {
       runtime.gameKind = "poker";
@@ -504,6 +515,111 @@ export class TablesService implements OnModuleInit {
     const row = await this.gamesService.getRow(gameDefinitionId);
     runtime.nextGameOverride = { gameDefinitionId: row.id, gameName: row.name };
     this.emitChanged(tableId);
+  }
+
+  /** The GameDefinition id this table would actually play with right now — the queued one-off override if set, otherwise its current game. */
+  private targetGameDefinitionId(runtime: RuntimeTable): string {
+    return runtime.nextGameOverride?.gameDefinitionId ?? runtime.gameDefinitionId;
+  }
+
+  /** What the settings modal fetches to pre-fill: GameDefinition defaults merged with any owner override, for whichever game this table would play next. */
+  async getGameConfig(tableId: string): Promise<EffectiveGameConfig> {
+    const runtime = this.getRuntimeTable(tableId);
+    const targetId = this.targetGameDefinitionId(runtime);
+    const row = await this.gamesService.getRow(targetId);
+    const overrides = runtime.gameConfigOverrides;
+
+    if (row.engine === "poker") {
+      const def = await this.gamesService.getDefinition(targetId);
+      const o = overrides.poker ?? {};
+      return {
+        kind: "poker",
+        smallBlind: o.smallBlind ?? def.forcedBets.smallBlind,
+        bigBlind: o.bigBlind ?? def.forcedBets.bigBlind,
+        ante: o.ante ?? def.forcedBets.ante,
+      };
+    }
+    if (row.engine === "clang") {
+      const def = await this.gamesService.getClangDefinition(targetId);
+      const o = overrides.clang ?? {};
+      return {
+        kind: "clang",
+        stake: o.stake ?? def.stake,
+        eatPaymentPerCard: o.eatPaymentPerCard ?? def.eatPaymentPerCard,
+      };
+    }
+    const def = await this.gamesService.getCardFlipDefinition(targetId);
+    const o = overrides.cardflip ?? {};
+    return {
+      kind: "cardflip",
+      stake: o.stake ?? def.stake,
+      cardsPerPlayer: o.cardsPerPlayer ?? def.cardsPerPlayer,
+      fourOfAKindBonus: o.fourOfAKindBonus ?? def.fourOfAKindBonus,
+      unopenedCardBonus: o.unopenedCardBonus ?? def.unopenedCardBonus,
+      straightFlushBonus: o.straightFlushBonus ?? def.straightFlushBonus,
+    };
+  }
+
+  /**
+   * Owner-only: overrides specific values for the table's current/queued
+   * game — layered on top of the GameDefinition at round-start time
+   * (TablesService.startHand / ClangService.startRound / CardFlipService.startRound),
+   * never mutating the GameDefinition row itself (builtin rows are shared
+   * across every table playing that game). Rejected mid-round, same as
+   * removePlayer — the values in play for the CURRENT hand/round must never
+   * shift underneath it.
+   */
+  async setGameConfig(tableId: string, requesterUserId: string, payload: SetGameConfigPayload): Promise<void> {
+    const runtime = this.getRuntimeTable(tableId);
+    if (requesterUserId !== runtime.ownerId) throw new ForbiddenException("Only the table owner can change game settings");
+    if (this.isRoundInProgress(runtime)) {
+      throw new BadRequestException("Cannot change settings while a hand or round is in progress");
+    }
+    const targetId = this.targetGameDefinitionId(runtime);
+    const row = await this.gamesService.getRow(targetId);
+
+    const overrides: TableGameConfigOverrides = { ...runtime.gameConfigOverrides };
+    if (row.engine === "poker") {
+      overrides.poker = {
+        smallBlind: this.validatedNonNegative("smallBlind", payload.smallBlind),
+        bigBlind: this.validatedNonNegative("bigBlind", payload.bigBlind),
+        ante: this.validatedNonNegative("ante", payload.ante),
+      };
+    } else if (row.engine === "clang") {
+      overrides.clang = {
+        stake: this.validatedPositive("stake", payload.stake),
+        eatPaymentPerCard: this.validatedNonNegative("eatPaymentPerCard", payload.eatPaymentPerCard),
+      };
+    } else {
+      overrides.cardflip = {
+        stake: this.validatedPositive("stake", payload.stake),
+        cardsPerPlayer: this.validatedPositive("cardsPerPlayer", payload.cardsPerPlayer),
+        fourOfAKindBonus: this.validatedNonNegative("fourOfAKindBonus", payload.fourOfAKindBonus),
+        unopenedCardBonus: this.validatedNonNegative("unopenedCardBonus", payload.unopenedCardBonus),
+        straightFlushBonus: this.validatedNonNegative("straightFlushBonus", payload.straightFlushBonus),
+      };
+    }
+
+    runtime.gameConfigOverrides = overrides;
+    await this.prisma.table.update({
+      where: { id: tableId },
+      data: { gameConfigOverrides: JSON.parse(JSON.stringify(overrides)) },
+    });
+    this.emitChanged(tableId);
+  }
+
+  /** Undefined passes through untouched (field left at its GameDefinition default); anything provided must be a finite number >= 0. */
+  private validatedNonNegative(field: string, value: number | undefined): number | undefined {
+    if (value === undefined) return undefined;
+    if (!Number.isFinite(value) || value < 0) throw new BadRequestException(`${field} must be a non-negative number`);
+    return value;
+  }
+
+  /** Same as validatedNonNegative, but rejects 0 too — for values that must be strictly positive (stake, cardsPerPlayer). */
+  private validatedPositive(field: string, value: number | undefined): number | undefined {
+    if (value === undefined) return undefined;
+    if (!Number.isFinite(value) || value <= 0) throw new BadRequestException(`${field} must be a positive number`);
+    return value;
   }
 
   /**

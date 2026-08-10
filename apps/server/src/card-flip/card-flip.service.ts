@@ -47,7 +47,10 @@ export class CardFlipService {
     runtime.nextGameOverride = null;
     const targetRow = await this.gamesService.getRow(targetGameDefinitionId);
     if (targetRow.engine !== "cardflip") throw new BadRequestException("Next game is not 10 Card Flip");
-    const config = await this.gamesService.getCardFlipDefinition(targetRow.id);
+    const baseConfig = await this.gamesService.getCardFlipDefinition(targetRow.id);
+    // Owner's Settings override layered on top — never mutates the (globally
+    // shared) GameDefinition row itself, see TablesService.setGameConfig.
+    const config = { ...baseConfig, ...runtime.gameConfigOverrides.cardflip };
 
     if (runtime.gameKind !== "cardflip" || targetRow.id !== runtime.gameDefinitionId) {
       runtime.gameKind = "cardflip";

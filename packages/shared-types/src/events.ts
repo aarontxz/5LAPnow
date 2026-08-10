@@ -1,5 +1,6 @@
 import type { PlayerAction } from "@5lapnow/game-engine";
 import type { ChatMessageView, TableSnapshot } from "./dto.js";
+import type { SetGameConfigPayload } from "./gameConfig.js";
 
 export interface ChatSendPayload {
   tableId: string;
@@ -75,6 +76,8 @@ export interface ClientToServerEvents {
   "table:startHand": (payload: { tableId: string }) => void;
   /** Owner-only: sets a one-hand/round game override (any engine; cleared once the next hand/round starts). */
   "table:setNextGame": (payload: { tableId: string; gameDefinitionId: string }) => void;
+  /** Owner-only: overrides specific values (blinds/ante, stake, etc.) for the table's current/queued game — rejected while a hand/round is in progress. */
+  "table:setGameConfig": (payload: SetGameConfigPayload) => void;
   "hand:action": (payload: HandActionRequest) => void;
   /** Any seated player can request to see the undealt community cards after a hand ends early. */
   "hand:revealRabbit": (payload: { tableId: string }) => void;
