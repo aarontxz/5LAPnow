@@ -51,8 +51,7 @@ export const api = {
   requestGameGeneration: (body: CreateGameGenerationRequestBody) =>
     request<GameGenerationRequestView>("/games/generate", { method: "POST", body: JSON.stringify(body) }),
   listGameGenerationRequests: () => request<GameGenerationRequestView[]>("/games/generate-requests"),
-  getTableSnapshot: (id: string, viewerUserId?: string) =>
-    request<TableSnapshot>(`/tables/${id}${viewerUserId ? `?viewerUserId=${encodeURIComponent(viewerUserId)}` : ""}`),
+  getTableSnapshot: (id: string) => request<TableSnapshot>(`/tables/${id}`),
   getLedger: (id: string) => request<TableLedgerResponse>(`/tables/${id}/ledger`),
   getGameConfig: (id: string) => request<EffectiveGameConfig>(`/tables/${id}/game-config`),
 };

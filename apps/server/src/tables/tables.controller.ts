@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Post, Query, UseGuards } from "@nestjs/common";
+import { Controller, Body, Get, Param, Post, UseGuards } from "@nestjs/common";
 import type { CreateTableRequest } from "@5lapnow/shared-types";
 import { TablesService } from "./tables.service";
 import { GuestAuthGuard } from "../users/guest-auth.guard";
@@ -14,9 +14,14 @@ export class TablesController {
     return this.tablesService.createTable(body, user.id, user.displayName);
   }
 
+  // Viewer identity must come from the authenticated session, never a client-suppliable
+  // query param — buildTableSnapshot reveals a seat's hole cards to whoever's userId
+  // matches that seat, so trusting a caller-provided viewerUserId let anyone read any
+  // seated player's live hand by passing in their (publicly visible) playerId.
   @Get(":id")
-  getSnapshot(@Param("id") id: string, @Query("viewerUserId") viewerUserId?: string) {
-    return this.tablesService.getSnapshot(id, viewerUserId ?? null);
+  @UseGuards(GuestAuthGuard)
+  getSnapshot(@Param("id") id: string, @CurrentUser() user: { id: string; displayName: string | null }) {
+    return this.tablesService.getSnapshot(id, user.id);
   }
 
   @Get(":id/ledger")
