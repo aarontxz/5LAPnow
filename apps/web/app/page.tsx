@@ -150,8 +150,7 @@ export default function LobbyPage() {
       <section className="rounded-2xl border border-white/10 bg-white/5 p-4 sm:p-6">
         <h2 className="mb-1 text-lg font-medium">✨ Generate a custom game with AI</h2>
         <p className="mb-4 text-sm text-white/50">
-          Describe the rules you want and our AI will build a playable variant for you. This isn&apos;t instant — it can
-          take a while, so check back later.
+          Describe the rules you want and our AI will build a playable variant for you. Once the game is generated, it will appear in your Game list and you can create a table with it. You will need to pay a fee of $5 a month to keep the generated game in your list after the first 7 days.
         </p>
         <label className="mb-1 block text-xs text-white/50">Describe your game&apos;s rules</label>
         <textarea
