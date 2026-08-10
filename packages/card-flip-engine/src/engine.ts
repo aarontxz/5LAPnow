@@ -1,4 +1,4 @@
-import { Card, createStandardDeck, shuffle } from "@5lapnow/cards";
+import { Card, createStandardDeck, secureRandom, shuffle } from "@5lapnow/cards";
 import { activeSeats, nextButtonSeatIndex, TableState } from "@5lapnow/game-engine";
 import { CardFlipPayment, CardFlipPlayerState, CardFlipRoundState } from "./state.js";
 import { comparePartialHands, describePartialHand, evaluatePartialHand, isFourOfAKind, isStraightFlush } from "./scoring.js";
@@ -28,7 +28,7 @@ function applyPayment(table: TableState, payment: CardFlipPayment): void {
  * everyone else.
  */
 export class CardFlipEngine {
-  constructor(private readonly rng: () => number = Math.random) {}
+  constructor(private readonly rng: () => number = secureRandom) {}
 
   /** Production entry point: shuffles enough combined standard decks and deals. */
   startRound(table: TableState, roundNumber: number, config: CardFlipGameDefinition): CardFlipRoundState {

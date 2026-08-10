@@ -1,4 +1,4 @@
-import { Card, createStandardDeck, shuffle } from "@5lapnow/cards";
+import { Card, createStandardDeck, secureRandom, shuffle } from "@5lapnow/cards";
 import { activeSeats, nextButtonSeatIndex, splitAmountEvenly, TableState } from "@5lapnow/game-engine";
 import { classifyHand, handValue, type ClangBonusPayouts } from "./scoring.js";
 import { ClangBonusHit, ClangPayment, ClangPhase, ClangPlayerState, ClangRoundState } from "./state.js";
@@ -31,7 +31,7 @@ function applyPayment(table: TableState, payment: ClangPayment): void {
  * tests can seed shuffles deterministically.
  */
 export class ClangEngine {
-  constructor(private readonly rng: () => number = Math.random) {}
+  constructor(private readonly rng: () => number = secureRandom) {}
 
   /**
    * Production entry point: shuffles a fresh deck and deals. Uses two combined

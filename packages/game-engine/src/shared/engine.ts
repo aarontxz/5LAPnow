@@ -1,4 +1,4 @@
-import { Card, Deck } from "@5lapnow/cards";
+import { Card, Deck, secureRandom } from "@5lapnow/cards";
 import { GameDefinition } from "./gameDefinition.js";
 import { activeSeats, nextButtonSeatIndex, TableState } from "./table.js";
 import {
@@ -29,7 +29,7 @@ import { ShowdownResult } from "./handState.js";
 export class DeclarativeEngine {
   constructor(
     private readonly gameDefinition: GameDefinition,
-    private readonly rng: () => number = Math.random
+    private readonly rng: () => number = secureRandom
   ) {}
 
   initHand(table: TableState, handNumber: number): HandState {

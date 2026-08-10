@@ -35,7 +35,9 @@ pnpm --filter @5lapnow/server prisma:generate  # prisma generate
 pnpm --filter @5lapnow/server seed             # seeds builtin GameDefinitions (see below)
 ```
 
-**Workspace packages resolve via their built `dist/`** (`main`/`types` in each `package.json`), not live TS source — after editing `packages/game-engine`, `packages/cards`, or `packages/shared-types`, rebuild that package (`pnpm --filter <pkg> build`, or run its `dev` watcher) before typechecking/running `apps/server` or `apps/web`, or you'll be checking against stale output.
+**Workspace packages resolve via their built `dist/`** (`main`/`types` in each `package.json`), not live TS source — after editing `packages/game-engine`, `packages/cards`, or `packages/shared-types`, that package needs a rebuild before typechecking/running `apps/server` or `apps/web`, or you'll be checking against stale output.
+
+**Never run `pnpm build` (root or `--filter`) yourself.** The user runs `pnpm dev` on their own machine, which watch-builds every package in parallel — running a build in this session fights that watcher and its output isn't what ends up running anyway. If you need fresh `dist/` output to typecheck against, ask the user to confirm their `pnpm dev` watcher is running instead of building it yourself.
 
 ## Architecture
 

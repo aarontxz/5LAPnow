@@ -1,9 +1,10 @@
 import { Card, RANKS, Suit, SUITS } from "./card.js";
+import { secureRandom } from "./random.js";
 
 export interface DeckOptions {
   /** Number of jokers to include (each represented as rank 15). */
   jokers?: number;
-  /** Injectable RNG for deterministic tests; defaults to Math.random. */
+  /** Injectable RNG for deterministic tests; defaults to secureRandom. */
   rng?: () => number;
 }
 
@@ -24,7 +25,7 @@ export function createStandardDeck(options: DeckOptions = {}): Card[] {
   return cards;
 }
 
-export function shuffle<T>(items: T[], rng: () => number = Math.random): T[] {
+export function shuffle<T>(items: T[], rng: () => number = secureRandom): T[] {
   const result = items.slice();
   for (let i = result.length - 1; i > 0; i--) {
     const j = Math.floor(rng() * (i + 1));
@@ -37,7 +38,7 @@ export class Deck {
   private cards: Card[];
 
   constructor(options: DeckOptions = {}) {
-    this.cards = shuffle(createStandardDeck(options), options.rng ?? Math.random);
+    this.cards = shuffle(createStandardDeck(options), options.rng ?? secureRandom);
   }
 
   get remaining(): number {
