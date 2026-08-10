@@ -82,6 +82,13 @@ export class ClangService {
     await this.finish(tableId, runtime);
   }
 
+  async draw(tableId: string, seatIndex: number): Promise<void> {
+    const runtime = this.requireClangTable(tableId);
+    const round = this.requireRound(runtime);
+    new ClangEngine().draw(runtime.table, round, seatIndex);
+    await this.finish(tableId, runtime);
+  }
+
   async play(tableId: string, seatIndex: number, rank: number): Promise<void> {
     const runtime = this.requireClangTable(tableId);
     const round = this.requireRound(runtime);
@@ -137,10 +144,10 @@ export class ClangService {
   /**
    * Auto-plays through any seat currently up (turn or eat decision) that's
    * marked away, so an AFK player never stalls the table — mirrors poker's
-   * away auto-check/fold. On your turn: discard your highest-value rank
-   * (Clang scores low, so this is the "least harmful to hold onto" default,
-   * not an arbitrary one). On an eat decision: always decline, since passing
-   * is always legal and commits to nothing.
+   * away auto-check/fold. On your turn: draw, then discard your
+   * highest-value rank (Clang scores low, so this is the "least harmful to
+   * hold onto" default, not an arbitrary one). On an eat decision: always
+   * decline, since passing is always legal and commits to nothing.
    */
   private resolveAwayTurns(table: TableState, round: ClangRoundState | null): void {
     if (!round) return;
@@ -154,6 +161,12 @@ export class ClangService {
         continue;
       }
       if (round.phase === "turn" || round.phase === "instant-window") {
+        const seatIndex = round.turnOrder[round.turnIndex] as number;
+        if (!isAway(seatIndex)) break;
+        engine.draw(table, round, seatIndex);
+        continue; // may have force-ended the round (empty pile) — let the loop re-check phase
+      }
+      if (round.phase === "awaiting-discard") {
         const seatIndex = round.turnOrder[round.turnIndex] as number;
         if (!isAway(seatIndex)) break;
         const player = round.players.find((p) => p.seatIndex === seatIndex);

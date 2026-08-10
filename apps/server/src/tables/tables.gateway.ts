@@ -231,6 +231,14 @@ export class TablesGateway implements OnGatewayInit, OnModuleInit {
     });
   }
 
+  @SubscribeMessage("clang:draw")
+  async onClangDraw(@ConnectedSocket() socket: AppSocket, @MessageBody() payload: { tableId: string }): Promise<void> {
+    await this.guard(socket, async () => {
+      const seatIndex = this.requireSeatIndex(payload.tableId, socket.data.userId);
+      await this.clangService.draw(payload.tableId, seatIndex);
+    });
+  }
+
   @SubscribeMessage("clang:play")
   async onClangPlay(@ConnectedSocket() socket: AppSocket, @MessageBody() payload: ClangRankPayload): Promise<void> {
     await this.guard(socket, async () => {

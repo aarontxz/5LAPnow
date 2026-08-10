@@ -30,16 +30,18 @@ import type { CardFlipSeatGameProps } from "./cardflip/seatGameProps";
 // max-content) sizes purely off the content, ignoring that positional
 // constraint, so every seat's card fan wraps identically regardless of
 // where it sits on the felt.
-const SEAT_BOX = "min-h-20 min-w-20 max-w-52 w-max sm:min-h-32 sm:min-w-44 sm:max-w-64";
+const SEAT_BOX = "min-h-20 min-w-20 max-w-52 w-max sm:min-h-32 sm:min-w-44 sm:max-w-72";
 // Phones have much less room per seat than desktop (SEAT_BOX's max-w-52 vs.
-// sm:max-w-64), so the two need different fan thresholds — a hand fans
+// sm:max-w-72), so the two need different fan thresholds — a hand fans
 // (compacts via negative-margin overlap) once it reaches this many cards,
-// below which it renders full-size and normally spaced. Every hand-card row
-// (own hand, opponents' face-down counts, Clang, Card Flip) reads these same
-// two constants, so mobile/desktop can't drift into more than one definition
-// of "fanned" per platform.
+// below which it renders full-size and normally spaced. sm:max-w-72 (288px,
+// minus ~16px padding = ~272px content) comfortably fits 6 unfanned small
+// PlayingCards at the sm+ size (40px + 4px gap each = 264px), so desktop's
+// threshold stays at 7. Every hand-card row (own hand, opponents' face-down
+// counts, Clang, Card Flip) reads these same two constants, so mobile/desktop
+// can't drift into more than one definition of "fanned" per platform.
 const MOBILE_HAND_FAN_THRESHOLD = 3;
-const DESKTOP_HAND_FAN_THRESHOLD = 6;
+const DESKTOP_HAND_FAN_THRESHOLD = 7;
 const EMPTY_BOX_CLASS = cn(
   SEAT_BOX,
   "flex flex-col items-center justify-center gap-1 rounded-xl border border-dashed border-white/20 bg-neutral-800 p-1.5 sm:p-2"

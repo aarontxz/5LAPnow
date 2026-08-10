@@ -127,8 +127,12 @@ function buildClangRoundView(round: ClangRoundState, table: TableState, viewerUs
     };
   });
 
+  // "awaiting-discard" is still this seat's turn (turnIndex hasn't advanced yet — they've
+  // drawn but not discarded), so it keeps the turn indicator/highlight lit the same as "turn".
   const turnSeatIndex =
-    round.phase === "turn" || round.phase === "instant-window" ? (round.turnOrder[round.turnIndex] ?? null) : null;
+    round.phase === "turn" || round.phase === "instant-window" || round.phase === "awaiting-discard"
+      ? (round.turnOrder[round.turnIndex] ?? null)
+      : null;
 
   const viewerSeatIndex = viewerUserId !== null ? (table.seats.find((s) => s.playerId === viewerUserId)?.seatIndex ?? null) : null;
   const viewerPlayer = viewerSeatIndex !== null ? round.players.find((p) => p.seatIndex === viewerSeatIndex) : undefined;
@@ -136,15 +140,19 @@ function buildClangRoundView(round: ClangRoundState, table: TableState, viewerUs
   let legalActions: ClangLegalActions | null = null;
   if (viewerPlayer && viewerSeatIndex !== null && !complete) {
     const isMyTurn = turnSeatIndex === viewerSeatIndex;
-    const canAct = isMyTurn && (round.phase === "turn" || round.phase === "instant-window");
+    // Draw first, then discard: canDraw covers the start of your turn (before you've
+    // drawn); canPlay only opens up once you've drawn and must now discard.
+    const canDraw = isMyTurn && (round.phase === "turn" || round.phase === "instant-window");
+    const canPlay = isMyTurn && round.phase === "awaiting-discard";
     const isEligibleEater = round.phase === "awaiting-eat" && round.pendingEat?.eaterSeatIndex === viewerSeatIndex;
     const eaterHasMatch = isEligibleEater && round.pendingEat
       ? viewerPlayer.hand.some((c) => c.rank === round.pendingEat!.rank)
       : false;
 
     legalActions = {
-      canPlay: canAct,
-      canCallClangNormal: canAct,
+      canDraw,
+      canPlay,
+      canCallClangNormal: canDraw,
       canCallInstantClang: round.phase === "instant-window" && round.allowInstantClang && handValue(viewerPlayer.hand) === 21,
       canEat: isEligibleEater && eaterHasMatch,
       canPassEat: isEligibleEater,

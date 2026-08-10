@@ -68,6 +68,7 @@ export default function TablePage({ params }: { params: Promise<{ id: string }> 
     sendAction,
     revealRabbit,
     showCards,
+    clangDraw,
     clangPlay,
     clangEat,
     clangPassEat,
@@ -334,6 +335,7 @@ export default function TablePage({ params }: { params: Promise<{ id: string }> 
               hand={myClangPlayer?.hand ?? []}
               handValue={myClangPlayer?.handValue ?? null}
               legalActions={clangRound.legalActions}
+              onDraw={clangDraw}
               onPlay={clangPlay}
               onEat={clangEat}
               onPassEat={clangPassEat}

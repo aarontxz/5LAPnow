@@ -32,6 +32,7 @@ export function ClangActionPanel({
   hand,
   handValue,
   legalActions,
+  onDraw,
   onPlay,
   onEat,
   onPassEat,
@@ -42,6 +43,7 @@ export function ClangActionPanel({
   /** Your current point total — live for your own hand, shown beside the Call Clang button. */
   handValue: number | null;
   legalActions: ClangLegalActions | null;
+  onDraw: () => void;
   onPlay: (rank: number) => void;
   onEat: () => void;
   onPassEat: () => void;
@@ -49,8 +51,8 @@ export function ClangActionPanel({
   onCallClangInstant: () => void;
 }) {
   if (!legalActions) return null;
-  const { canPlay, canCallClangNormal, canCallInstantClang, canEat, canPassEat } = legalActions;
-  if (!canPlay && !canCallClangNormal && !canCallInstantClang && !canEat && !canPassEat) return null;
+  const { canDraw, canPlay, canCallClangNormal, canCallInstantClang, canEat, canPassEat } = legalActions;
+  if (!canDraw && !canPlay && !canCallClangNormal && !canCallInstantClang && !canEat && !canPassEat) return null;
 
   const groups = groupByRank(hand);
 
@@ -87,14 +89,25 @@ export function ClangActionPanel({
         </button>
       )}
 
-      {(canPlay || canCallClangNormal) && (
+      {/* Draw first, then throw: your turn starts with just a Draw button —
+          the discard choices only appear once you've drawn and can see your
+          full (now 6-card) hand. */}
+      {canDraw && (
+        <button
+          onClick={onDraw}
+          className="rounded-full bg-emerald-600 px-5 py-2 text-sm font-medium text-white hover:bg-emerald-500"
+        >
+          Draw
+        </button>
+      )}
+
+      {canPlay && (
         <div className="flex flex-nowrap items-center justify-center gap-1.5 overflow-x-auto">
           {groups.map(({ rank, cards }) => (
             <button
               key={rank}
-              disabled={!canPlay}
               onClick={() => onPlay(rank)}
-              className="flex shrink-0 flex-col items-center gap-0.5 rounded-lg border border-white/10 bg-white/5 p-1 hover:border-purple-400/50 hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-40"
+              className="flex shrink-0 flex-col items-center gap-0.5 rounded-lg border border-white/10 bg-white/5 p-1 hover:border-purple-400/50 hover:bg-white/10"
             >
               <div className="flex gap-0.5">
                 {cards.map((c, i) => (

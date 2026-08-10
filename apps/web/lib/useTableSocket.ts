@@ -126,6 +126,7 @@ export function useTableSocket(tableId: string | null) {
   const sendAction = (action: PlayerAction) => tableId && socketRef.current?.emit("hand:action", { tableId, action });
   const revealRabbit = () => tableId && socketRef.current?.emit("hand:revealRabbit", { tableId });
   const showCards = () => tableId && socketRef.current?.emit("hand:showCards", { tableId });
+  const clangDraw = () => tableId && socketRef.current?.emit("clang:draw", { tableId });
   const clangPlay = (rank: number) => tableId && socketRef.current?.emit("clang:play", { tableId, rank });
   const clangEat = () => tableId && socketRef.current?.emit("clang:eat", { tableId });
   const clangPassEat = () => tableId && socketRef.current?.emit("clang:passEat", { tableId });
@@ -156,6 +157,7 @@ export function useTableSocket(tableId: string | null) {
     sendAction,
     revealRabbit,
     showCards,
+    clangDraw,
     clangPlay,
     clangEat,
     clangPassEat,

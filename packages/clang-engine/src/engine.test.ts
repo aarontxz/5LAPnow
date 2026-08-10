@@ -114,6 +114,8 @@ describe("ClangEngine", () => {
     ];
     const round = engine.startRoundWithDeck(table, 1, 5, 2, deck);
 
+    engine.draw(table, round, 0);
+    expect(round.phase).toBe("awaiting-discard");
     engine.playRank(table, round, 0, 9);
 
     expect(round.phase).toBe("turn");
@@ -135,9 +137,10 @@ describe("ClangEngine", () => {
     const round = engine.startRoundWithDeck(table, 1, 5, 2, deck);
     const before = totalChips(table);
 
+    engine.draw(table, round, 0);
     engine.playRank(table, round, 0, 9);
     expect(round.phase).toBe("awaiting-eat");
-    expect(round.pendingEat).toEqual({ discarderSeatIndex: 0, eaterSeatIndex: 1, rank: 9 });
+    expect(round.pendingEat).toEqual({ discarderSeatIndex: 0, eaterSeatIndex: 1, rank: 9, chainDepth: 0 });
 
     engine.eat(table, round, 1);
 
@@ -163,6 +166,7 @@ describe("ClangEngine", () => {
     ];
     const round = engine.startRoundWithDeck(table, 1, 5, 2, deck);
 
+    engine.draw(table, round, 0);
     engine.playRank(table, round, 0, 9);
     expect(round.phase).toBe("awaiting-eat");
 
@@ -178,14 +182,17 @@ describe("ClangEngine", () => {
     const table = buildTable(2);
     const engine = new ClangEngine();
     const deck = [
-      card(9), card(2), card(2), card(2), card(2), // seat0: 9+2+2+2+2=17, discards the 9 -> 8
+      card(9), card(2), card(2), card(2), card(2), // seat0: 9+2+2+2+2=17 (never gets to discard)
       card(4), card(4), card(4), card(4), card(4), // seat1: 20
     ]; // no cards left over for the draw pile
     const round = engine.startRoundWithDeck(table, 1, 5, 2, deck);
     expect(round.drawPile).toHaveLength(0);
     const before = totalChips(table);
 
-    engine.playRank(table, round, 0, 9); // no eligible eater (seat1 has no 9s) -> tries to draw -> forced showdown
+    // Draw-first: seat0 must draw to take their turn at all, but the pile is
+    // empty, so the round force-ends right here — the discard they would
+    // have made never happens, and hands reveal exactly as dealt.
+    engine.draw(table, round, 0);
 
     expect(round.phase).toBe("complete");
     expect(round.result?.type).toBe("forced");
@@ -267,7 +274,10 @@ describe("ClangEngine", () => {
     ];
     const round = engine.startRoundWithDeck(table, 1, 5, 2, deck);
 
-    expect(() => engine.playRank(table, round, 1, 4)).toThrow(); // not seat1's turn
+    expect(() => engine.draw(table, round, 1)).toThrow(); // not seat1's turn
+    expect(() => engine.playRank(table, round, 0, 9)).toThrow(); // haven't drawn yet this turn
+
+    engine.draw(table, round, 0);
     expect(() => engine.playRank(table, round, 0, 7)).toThrow(); // seat0 holds no 7s
     expect(() => engine.eat(table, round, 1)).toThrow(); // no pending eat yet
 

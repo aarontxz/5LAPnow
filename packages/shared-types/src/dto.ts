@@ -105,6 +105,9 @@ export interface ClangPlayerView {
 }
 
 export interface ClangLegalActions {
+  /** Start of turn: draw a card before you can discard. */
+  canDraw: boolean;
+  /** After drawing: discard from your now-6-card hand. */
   canPlay: boolean;
   canCallClangNormal: boolean;
   canCallInstantClang: boolean;

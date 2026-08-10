@@ -80,7 +80,9 @@ export interface ClientToServerEvents {
   "hand:revealRabbit": (payload: { tableId: string }) => void;
   /** After a hand completes, a player who wasn't forced to show at a contested showdown (won uncontested, or folded earlier) can voluntarily reveal their hole cards to everyone. */
   "hand:showCards": (payload: { tableId: string }) => void;
-  /** On your turn: discard all cards of this rank. */
+  /** On your turn, before you may discard: draw one card from the pile. */
+  "clang:draw": (payload: { tableId: string }) => void;
+  /** After drawing: discard all cards of this rank. */
   "clang:play": (payload: ClangRankPayload) => void;
   /** Only legal for the specific eligible next-player while awaiting an Eat decision, and only if they hold a matching card. */
   "clang:eat": (payload: { tableId: string }) => void;

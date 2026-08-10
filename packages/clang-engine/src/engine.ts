@@ -1,7 +1,7 @@
 import { Card, createStandardDeck, shuffle } from "@5lapnow/cards";
 import { activeSeats, nextButtonSeatIndex, splitAmountEvenly, TableState } from "@5lapnow/game-engine";
 import { classifyHand, handValue, type ClangBonusPayouts } from "./scoring.js";
-import { ClangBonusHit, ClangPayment, ClangPlayerState, ClangRoundState } from "./state.js";
+import { ClangBonusHit, ClangPayment, ClangPhase, ClangPlayerState, ClangRoundState } from "./state.js";
 
 export const MIN_CLANG_PLAYERS = 2;
 /** Above this many players, a single 52-card deck can't reliably support the game — a second deck is shuffled in. */
@@ -140,9 +140,25 @@ export class ClangEngine {
     this.settleInstantWin(table, round, seatIndex);
   }
 
-  /** On your turn: discard all cards of `rank`, draw immediately, then open the next player's Eat window if they can match it. */
+  /**
+   * On your turn, before you may discard: draw one card from the pile. Must
+   * be the first thing you do — `playRank` then discards from this
+   * now-6-card hand, so you always get to see what you drew before choosing
+   * what to throw. If the pile is empty, the round force-ends in a neutral
+   * showdown right here instead (see `drawOne`), and no discard ever happens
+   * this turn.
+   */
+  draw(table: TableState, round: ClangRoundState, seatIndex: number): void {
+    this.requireTurn(round, seatIndex, ["turn", "instant-window"]);
+    round.allowInstantClang = false;
+    const drew = this.drawOne(table, round, seatIndex);
+    if (!drew) return; // forced showdown triggered
+    round.phase = "awaiting-discard";
+  }
+
+  /** After drawing: discard all cards of `rank` from your hand, then open the next player's Eat window if they can match it. */
   playRank(table: TableState, round: ClangRoundState, seatIndex: number, rank: number): void {
-    this.requireTurn(round, seatIndex);
+    this.requireTurn(round, seatIndex, ["awaiting-discard"]);
     const player = this.requirePlayer(round, seatIndex);
     const { removed, remaining } = extractRank(player.hand, rank);
     if (removed.length === 0) throw new Error(`You have no cards of rank ${rank}`);
@@ -150,12 +166,7 @@ export class ClangEngine {
     player.hand = remaining;
     round.discardPile.push(...removed);
     round.lastDiscardCount = removed.length;
-    round.allowInstantClang = false;
     round.actions.push({ type: "play", seatIndex, rank, count: removed.length });
-
-    // Draw immediately — the eat window (if any) opens after the draw.
-    const drew = this.drawOne(table, round, seatIndex);
-    if (!drew) return; // forced showdown triggered
 
     const eaterSeatIndex = round.turnOrder[(round.turnIndex + 1) % round.turnOrder.length] as number;
     const eater = this.requirePlayer(round, eaterSeatIndex);
@@ -219,16 +230,16 @@ export class ClangEngine {
     this.finishDiscarderTurn(round, { skipCount: chainDepth + 1 });
   }
 
-  /** On your turn, instead of playing: reveal all hands, lowest total wins. */
+  /** On your turn, instead of drawing: reveal all hands, lowest total wins. Only available before you've drawn — once you draw you're committed to discarding. */
   callClangNormal(table: TableState, round: ClangRoundState, seatIndex: number): void {
-    this.requireTurn(round, seatIndex);
+    this.requireTurn(round, seatIndex, ["turn", "instant-window"]);
     round.allowInstantClang = false;
     round.actions.push({ type: "callClang", seatIndex });
     this.settleShowdown(table, round, seatIndex, "call");
   }
 
-  private requireTurn(round: ClangRoundState, seatIndex: number): void {
-    if (round.phase !== "turn" && round.phase !== "instant-window") throw new Error("No action is available right now");
+  private requireTurn(round: ClangRoundState, seatIndex: number, allowedPhases: ClangPhase[]): void {
+    if (!allowedPhases.includes(round.phase)) throw new Error("No action is available right now");
     if (round.turnOrder[round.turnIndex] !== seatIndex) throw new Error("It is not your turn");
   }
 
@@ -256,8 +267,9 @@ export class ClangEngine {
   }
 
   /**
-   * Advances the turn by `skipCount` positions. The discarder already drew in `playRank`;
-   * skipCount encodes: 1 = no eat, N+1 = N eaters in the chain (all their turns are skipped).
+   * Advances the turn by `skipCount` positions. The discarder already drew back in `draw()`,
+   * before `playRank`; skipCount encodes: 1 = no eat, N+1 = N eaters in the chain (all their
+   * turns are skipped).
    */
   private finishDiscarderTurn(
     round: ClangRoundState,

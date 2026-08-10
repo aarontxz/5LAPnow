@@ -1,7 +1,7 @@
 import type { Card } from "@5lapnow/cards";
 import type { ClangHandCategory } from "./scoring.js";
 
-export type ClangPhase = "instant-window" | "awaiting-eat" | "turn" | "complete";
+export type ClangPhase = "instant-window" | "awaiting-eat" | "turn" | "awaiting-discard" | "complete";
 
 export interface ClangPlayerState {
   seatIndex: number;
