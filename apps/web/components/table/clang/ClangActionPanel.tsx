@@ -4,6 +4,13 @@ import type { Card } from "@5lapnow/cards";
 import type { ClangLegalActions } from "@5lapnow/shared-types";
 import { PlayingCard } from "../PlayingCard";
 import { ActionBar } from "../ActionBar";
+import { cn } from "@/lib/cn";
+
+/** Not literally HTML-disabled — clicking still reaches the real handler, which the
+ * server rejects with a clear reason ("It is not your turn") via the existing
+ * error-toast pipeline. Only visually disabled, so the panel never needs to hide
+ * itself just because it isn't your turn right now. */
+const DISABLED = "cursor-not-allowed opacity-40";
 
 const RANK_LABELS: Record<number, string> = { 11: "J", 12: "Q", 13: "K", 14: "A" };
 
@@ -52,7 +59,6 @@ export function ClangActionPanel({
 }) {
   if (!legalActions) return null;
   const { canDraw, canPlay, canCallClangNormal, canCallInstantClang, canEat, canPassEat } = legalActions;
-  if (!canDraw && !canPlay && !canCallClangNormal && !canCallInstantClang && !canEat && !canPassEat) return null;
 
   const groups = groupByRank(hand);
 
@@ -91,17 +97,11 @@ export function ClangActionPanel({
 
       {/* Draw first, then throw: your turn starts with just a Draw button —
           the discard choices only appear once you've drawn and can see your
-          full (now 6-card) hand. */}
-      {canDraw && (
-        <button
-          onClick={onDraw}
-          className="rounded-full bg-emerald-600 px-5 py-2 text-sm font-medium text-white hover:bg-emerald-500"
-        >
-          Draw
-        </button>
-      )}
-
-      {canPlay && (
+          full (now 6-card) hand. Always shown (never hidden waiting for your
+          turn) — greyed out and disabled-looking, but still clickable, so a
+          press when it isn't your turn gets a clear "It is not your turn"
+          from the server instead of the button just not being there. */}
+      {canPlay ? (
         <div className="flex flex-nowrap items-center justify-center gap-1.5 overflow-x-auto">
           {groups.map(({ rank, cards }) => (
             <button
@@ -118,23 +118,28 @@ export function ClangActionPanel({
             </button>
           ))}
         </div>
+      ) : (
+        <button
+          onClick={onDraw}
+          className={cn("rounded-full bg-emerald-600 px-5 py-2 text-sm font-medium text-white hover:bg-emerald-500", !canDraw && DISABLED)}
+        >
+          Draw
+        </button>
       )}
 
-      {canCallClangNormal && (
-        <div className="flex items-center gap-2">
-          {handValue != null && (
-            <span className="rounded-full border border-white/10 bg-white/5 px-3 py-2 text-sm font-medium text-white/70">
-              Total: {handValue}
-            </span>
-          )}
-          <button
-            onClick={onCallClang}
-            className="rounded-full bg-purple-600 px-5 py-2 text-sm font-medium text-white hover:bg-purple-500"
-          >
-            Call Clang
-          </button>
-        </div>
-      )}
+      <div className="flex items-center gap-2">
+        {handValue != null && (
+          <span className="rounded-full border border-white/10 bg-white/5 px-3 py-2 text-sm font-medium text-white/70">
+            Total: {handValue}
+          </span>
+        )}
+        <button
+          onClick={onCallClang}
+          className={cn("rounded-full bg-purple-600 px-5 py-2 text-sm font-medium text-white hover:bg-purple-500", !canCallClangNormal && DISABLED)}
+        >
+          Call Clang
+        </button>
+      </div>
     </ActionBar>
   );
 }

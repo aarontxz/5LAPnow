@@ -91,7 +91,7 @@ export class ClangEngine {
       players,
       turnOrder,
       turnIndex: 0,
-      allowInstantClang: true,
+      instantClangClosedSeats: [],
       pendingEat: null,
       bonusHits,
       actions: [
@@ -126,16 +126,15 @@ export class ClangEngine {
     return hits;
   }
 
-  /** Out-of-turn: only legal during the instant-21 window, for a holder of exactly 21. */
+  /** Out-of-turn: legal any time before this seat's own first turn, for a holder of exactly 21. */
   callInstantClang(table: TableState, round: ClangRoundState, seatIndex: number): void {
-    if (round.phase !== "instant-window" || !round.allowInstantClang) {
+    if (round.phase === "complete" || round.instantClangClosedSeats.includes(seatIndex)) {
       throw new Error("Instant Clang is not available right now");
     }
     const player = this.requirePlayer(round, seatIndex);
     if (handValue(player.hand) !== INSTANT_CLANG_VALUE) {
       throw new Error("You need exactly 21 points to call an instant Clang");
     }
-    round.allowInstantClang = false;
     round.actions.push({ type: "callClangInstant", seatIndex });
     this.settleInstantWin(table, round, seatIndex);
   }
@@ -150,7 +149,7 @@ export class ClangEngine {
    */
   draw(table: TableState, round: ClangRoundState, seatIndex: number): void {
     this.requireTurn(round, seatIndex, ["turn", "instant-window"]);
-    round.allowInstantClang = false;
+    this.closeInstantClangWindow(round, seatIndex);
     const drew = this.drawOne(table, round, seatIndex);
     if (!drew) return; // forced showdown triggered
     round.phase = "awaiting-discard";
@@ -233,7 +232,7 @@ export class ClangEngine {
   /** On your turn, instead of drawing: reveal all hands, lowest total wins. Only available before you've drawn — once you draw you're committed to discarding. */
   callClangNormal(table: TableState, round: ClangRoundState, seatIndex: number): void {
     this.requireTurn(round, seatIndex, ["turn", "instant-window"]);
-    round.allowInstantClang = false;
+    this.closeInstantClangWindow(round, seatIndex);
     round.actions.push({ type: "callClang", seatIndex });
     this.settleShowdown(table, round, seatIndex, "call");
   }
@@ -241,6 +240,11 @@ export class ClangEngine {
   private requireTurn(round: ClangRoundState, seatIndex: number, allowedPhases: ClangPhase[]): void {
     if (!allowedPhases.includes(round.phase)) throw new Error("No action is available right now");
     if (round.turnOrder[round.turnIndex] !== seatIndex) throw new Error("It is not your turn");
+  }
+
+  /** A seat's instant-Clang eligibility ends the moment they take their own first turn action. */
+  private closeInstantClangWindow(round: ClangRoundState, seatIndex: number): void {
+    if (!round.instantClangClosedSeats.includes(seatIndex)) round.instantClangClosedSeats.push(seatIndex);
   }
 
   private requirePlayer(round: ClangRoundState, seatIndex: number): ClangPlayerState {
@@ -281,7 +285,6 @@ export class ClangEngine {
 
   private forcedShowdown(table: TableState, round: ClangRoundState): void {
     round.pendingEat = null;
-    round.allowInstantClang = false;
     round.actions.push({ type: "forcedShowdown" });
     this.settleShowdown(table, round, null, "forced");
   }

@@ -156,7 +156,7 @@ function buildClangRoundView(round: ClangRoundState, table: TableState, viewerUs
       canDraw,
       canPlay,
       canCallClangNormal: canDraw,
-      canCallInstantClang: round.phase === "instant-window" && round.allowInstantClang && handValue(viewerPlayer.hand) === 21,
+      canCallInstantClang: !round.instantClangClosedSeats.includes(viewerSeatIndex) && handValue(viewerPlayer.hand) === 21,
       canEat: isEligibleEater && eaterHasMatch,
       canPassEat: isEligibleEater,
     };

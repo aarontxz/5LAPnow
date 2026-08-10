@@ -93,6 +93,45 @@ describe("ClangEngine", () => {
     expect(round.result?.callerSeatIndex).toBe(0);
   });
 
+  it("keeps a seat's instant-Clang window open until their own first turn, even after an earlier seat has already acted", () => {
+    const table = buildTable(3); // turn order 0 -> 1 -> 2
+    const engine = new ClangEngine();
+    const deck = [
+      card(4), card(4), card(4), card(4), card(4), // seat0: 20, draws first
+      card(5), card(5), card(5), card(3), card(3), // seat1: 21, hasn't acted yet
+      card(9), card(9), card(9), card(9), card(9), // seat2: 45
+      card(6), // seat0's draw
+    ];
+    const round = engine.startRoundWithDeck(table, 1, 5, 2, deck);
+
+    // Seat0 (first in turn order) takes their turn — this used to close the
+    // global instant-Clang window for every other seat too.
+    engine.draw(table, round, 0);
+    expect(round.phase).toBe("awaiting-discard");
+
+    // Seat1 hasn't had their own first turn yet, so they should still be able
+    // to call an instant Clang on their 21.
+    engine.callInstantClang(table, round, 1);
+
+    expect(round.phase).toBe("complete");
+    expect(round.result?.type).toBe("instant");
+    expect(round.result?.winnerSeatIndices).toEqual([1]);
+  });
+
+  it("closes a seat's own instant-Clang window once they've taken their first turn", () => {
+    const table = buildTable(2);
+    const engine = new ClangEngine();
+    const deck = [
+      card(9), card(3), card(3), card(3), card(3), // seat0: 21 after drawing away from it, but acted already
+      card(2), card(2), card(2), card(2), card(2), // seat1: 10
+      card(4), // seat0's draw
+    ];
+    const round = engine.startRoundWithDeck(table, 1, 5, 2, deck);
+
+    engine.draw(table, round, 0);
+    expect(() => engine.callInstantClang(table, round, 0)).toThrow();
+  });
+
   it("rejects an instant Clang call from a hand that isn't exactly 21", () => {
     const table = buildTable(2);
     const engine = new ClangEngine();

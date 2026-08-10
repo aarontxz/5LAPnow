@@ -44,7 +44,7 @@ export default function TablePage({ params }: { params: Promise<{ id: string }> 
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [chatOpen, setChatOpen] = useState(false);
   const [linkCopied, setLinkCopied] = useState(false);
-  const [games, setGames] = useState<Array<{ id: string; name: string; description: string }>>([]);
+  const [games, setGames] = useState<Array<{ id: string; name: string; description: string; engine: "poker" | "clang" | "cardflip" }>>([]);
   // Seats near each other can overlap on small screens (SeatView's width/hand-fan
   // grows past the felt's per-seat spacing) — raising one above its neighbors on
   // hover (desktop) or tap (touch) lets it be read in full. Each seat's wrapper
@@ -89,7 +89,7 @@ export default function TablePage({ params }: { params: Promise<{ id: string }> 
     function onSession(s: Session) {
       setSession(s);
       setReadyTableId(tableId);
-      void api.listGames(s.userId).then((g) => setGames(g.map((x) => ({ id: x.id, name: x.name, description: x.description }))));
+      void api.listGames(s.userId).then((g) => setGames(g.map((x) => ({ id: x.id, name: x.name, description: x.description, engine: x.engine }))));
     }
     void api.me().then((me) => {
       if (me) {
@@ -208,15 +208,26 @@ export default function TablePage({ params }: { params: Promise<{ id: string }> 
   const currentBet = !isComplete && hand ? hand.players.reduce((max, p) => Math.max(max, p.committedThisStreet), 0) : 0;
   const potBeforeStreet = displayPot - currentBet;
 
-  const isClang = snapshot?.gameKind === "clang";
   const clangRound = snapshot?.clangRound ?? null;
   const clangRoundActive = clangRound !== null && clangRound.phase !== "complete";
+  const cardFlipRound = snapshot?.cardFlipRound ?? null;
+  const cardFlipRoundActive = cardFlipRound !== null && cardFlipRound.phase !== "complete";
+
+  // Between hands/rounds (nothing actually live), preview whatever the owner
+  // has queued via the Start button's game picker instead of the previous
+  // game — so everyone's felt (board mode, seat rendering, action panel
+  // choice) updates the moment the owner picks a different game, without
+  // needing to actually press Start first. Once something's genuinely
+  // running, always show the real thing regardless of what's queued next.
+  const anyRoundActive = !!snapshot?.handInProgress || clangRoundActive || cardFlipRoundActive;
+  const queuedEngine = games.find((g) => g.id === snapshot?.nextGameDefinitionId)?.engine;
+  const displayGameKind = anyRoundActive ? snapshot?.gameKind : (queuedEngine ?? snapshot?.gameKind);
+
+  const isClang = displayGameKind === "clang";
   const myClangPlayer = clangRound?.players.find((p) => p.seatIndex === mySeatIndex);
   const clangPayments = clangRound?.result?.payments ?? [];
 
-  const isCardFlip = snapshot?.gameKind === "cardflip";
-  const cardFlipRound = snapshot?.cardFlipRound ?? null;
-  const cardFlipRoundActive = cardFlipRound !== null && cardFlipRound.phase !== "complete";
+  const isCardFlip = displayGameKind === "cardflip";
   const cardFlipPayments = cardFlipRound?.result?.payments ?? [];
 
   async function copyShareLink() {
@@ -319,7 +330,7 @@ export default function TablePage({ params }: { params: Promise<{ id: string }> 
   function renderStartControl() {
     return (
       <AnimatePresence>
-        {isOwner && !snapshot?.handInProgress && activeSeats >= 2 && (
+        {isOwner && !anyRoundActive && (
           <motion.div
             key="start-hand"
             initial={{ opacity: 0, scale: 0.9 }}
@@ -332,6 +343,7 @@ export default function TablePage({ params }: { params: Promise<{ id: string }> 
               activeGameDefinitionId={snapshot?.nextGameDefinitionId}
               onSelect={setNextGame}
               onStart={startHand}
+              canStart={activeSeats >= 2}
             />
           </motion.div>
         )}

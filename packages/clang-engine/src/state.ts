@@ -65,7 +65,12 @@ export interface ClangRoundState {
   /** Seat indices in play order for this round, starting at the button. Fixed for the whole round. */
   turnOrder: number[];
   turnIndex: number;
-  allowInstantClang: boolean;
+  /** Seat indices that have taken their own first turn action (Draw or Call Clang) and
+   * have therefore lost their shot at an instant Clang. Each seat's "golden window" lasts
+   * until *their own* first turn, independent of what other seats have already done —
+   * e.g. seat 2 can still call an instant Clang after seat 0 has drawn, as long as seat 2
+   * hasn't taken a turn yet themselves. */
+  instantClangClosedSeats: number[];
   pendingEat: ClangPendingEat | null;
   /** Starting-hand bounties paid out at deal time (e.g. a Four of a Kind or Straight Flush), independent of the round's eventual outcome. */
   bonusHits: ClangBonusHit[];

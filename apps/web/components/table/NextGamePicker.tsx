@@ -14,11 +14,14 @@ export function NextGamePicker({
   activeGameDefinitionId,
   onSelect,
   onStart,
+  canStart,
 }: {
   games: GameOption[];
   activeGameDefinitionId: string | undefined;
   onSelect: (gameDefinitionId: string) => void;
   onStart: () => void;
+  /** False before a 2nd player has joined — the game picker stays fully usable either way, only the Start button itself is disabled. */
+  canStart: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const active = games.find((g) => g.id === activeGameDefinitionId);
@@ -66,11 +69,14 @@ export function NextGamePicker({
         {/* Divider */}
         <div className="h-px bg-emerald-500/60" />
 
-        {/* Start hand — main action */}
+        {/* Start hand — main action; disabled (not hidden) before a 2nd player
+            joins, so the game picker above stays reachable the whole time. */}
         <motion.button
-          whileTap={{ scale: 0.97 }}
+          whileTap={canStart ? { scale: 0.97 } : undefined}
           onClick={onStart}
-          className="flex items-center justify-center gap-2 bg-emerald-600 px-6 py-3 text-sm font-semibold text-white transition-colors hover:bg-emerald-500 active:bg-emerald-700"
+          disabled={!canStart}
+          title={canStart ? undefined : "Waiting for a second player to join"}
+          className="flex items-center justify-center gap-2 bg-emerald-600 px-6 py-3 text-sm font-semibold text-white transition-colors hover:bg-emerald-500 active:bg-emerald-700 disabled:cursor-not-allowed disabled:bg-emerald-800 disabled:text-white/40 disabled:hover:bg-emerald-800"
         >
           <span className="text-base leading-none">▶</span>
           Start hand
