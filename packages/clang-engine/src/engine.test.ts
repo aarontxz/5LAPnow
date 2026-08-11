@@ -132,6 +132,27 @@ describe("ClangEngine", () => {
     expect(() => engine.callInstantClang(table, round, 0)).toThrow();
   });
 
+  it("closes a seat's instant-Clang window once they've eaten, even before their own first turn", () => {
+    const table = buildTable(2);
+    const engine = new ClangEngine();
+    const deck = [
+      card(3), card(3), card(3), card(3), card(6), // seat0: draws, then discards all four 3s
+      card(3), card(5), card(5), card(5), card(6), // seat1: eats the single 3, left holding 21
+      card(9), // seat0's draw
+    ];
+    const round = engine.startRoundWithDeck(table, 1, 5, 2, deck);
+
+    engine.draw(table, round, 0);
+    engine.playRank(table, round, 0, 3);
+    expect(round.phase).toBe("awaiting-eat");
+
+    engine.eat(table, round, 1);
+
+    // Seat1 never had their own first turn, but eating is itself an action —
+    // their instant-Clang shot on the resulting 21 should already be gone.
+    expect(() => engine.callInstantClang(table, round, 1)).toThrow();
+  });
+
   it("rejects an instant Clang call from a hand that isn't exactly 21", () => {
     const table = buildTable(2);
     const engine = new ClangEngine();

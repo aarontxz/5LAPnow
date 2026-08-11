@@ -1,7 +1,7 @@
 import { randomInt } from "node:crypto";
 
-/** Kept under the 2^48 ceiling node:crypto's randomInt enforces — still far more precision than a 52-card shuffle needs. */
-const RANGE = 2 ** 48;
+/** node:crypto's randomInt enforces max - min <= 2^48 - 1, so this must stay one below the ceiling — still far more precision than a 52-card shuffle needs. */
+const RANGE = 2 ** 48 - 1;
 
 /**
  * Cryptographically secure drop-in replacement for Math.random(): same `() => number`

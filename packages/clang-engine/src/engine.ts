@@ -189,6 +189,7 @@ export class ClangEngine {
     const eater = this.requirePlayer(round, seatIndex);
     const { removed, remaining } = extractRank(eater.hand, rank);
     if (removed.length === 0) throw new Error("You no longer hold a matching card");
+    this.closeInstantClangWindow(round, seatIndex);
     eater.hand = remaining;
     round.discardPile.push(...removed);
     round.lastDiscardCount = removed.length;
