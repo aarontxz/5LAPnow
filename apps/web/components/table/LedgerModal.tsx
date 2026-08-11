@@ -37,6 +37,16 @@ export function LedgerModal({
   const [loading, setLoading] = useState(false);
   const [tab, setTab] = useState<"ledger" | "log">("ledger");
   const [expandedHand, setExpandedHand] = useState<number | null>(null);
+  const [copied, setCopied] = useState(false);
+
+  const copyLedger = () => {
+    if (!data) return;
+    const lines = data.players.map((p) => `${p.displayName}: ${p.net > 0 ? "+" : ""}${p.net}`);
+    navigator.clipboard.writeText(["/session", ...lines].join("\n")).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    });
+  };
 
   useEffect(() => {
     if (!open) return;
@@ -79,7 +89,16 @@ export function LedgerModal({
             {data.players.length === 0 ? (
               <p className="text-sm text-neutral-400">No chip activity yet.</p>
             ) : (
-              <table className="w-full border-collapse text-sm">
+              <>
+                <div className="mb-2 flex justify-end">
+                  <button
+                    onClick={copyLedger}
+                    className="rounded-md border border-neutral-200 px-2.5 py-1 text-xs font-medium text-neutral-500 hover:bg-neutral-50 hover:text-neutral-700"
+                  >
+                    {copied ? "Copied!" : "Copy ledger"}
+                  </button>
+                </div>
+                <table className="w-full border-collapse text-sm">
                 <thead>
                   <tr className="border-b border-neutral-200 text-left text-xs uppercase tracking-wide text-neutral-400">
                     <th className="py-2 pr-3 font-medium">Player</th>
@@ -111,7 +130,8 @@ export function LedgerModal({
                     </tr>
                   ))}
                 </tbody>
-              </table>
+                </table>
+              </>
             )}
           </div>
         )}
