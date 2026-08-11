@@ -89,16 +89,7 @@ export function LedgerModal({
             {data.players.length === 0 ? (
               <p className="text-sm text-neutral-400">No chip activity yet.</p>
             ) : (
-              <>
-                <div className="mb-2 flex justify-end">
-                  <button
-                    onClick={copyLedger}
-                    className="rounded-md border border-neutral-200 px-2.5 py-1 text-xs font-medium text-neutral-500 hover:bg-neutral-50 hover:text-neutral-700"
-                  >
-                    {copied ? "Copied!" : "Copy ledger"}
-                  </button>
-                </div>
-                <table className="w-full border-collapse text-sm">
+              <table className="w-full border-collapse text-sm">
                 <thead>
                   <tr className="border-b border-neutral-200 text-left text-xs uppercase tracking-wide text-neutral-400">
                     <th className="py-2 pr-3 font-medium">Player</th>
@@ -130,9 +121,19 @@ export function LedgerModal({
                     </tr>
                   ))}
                 </tbody>
-                </table>
-              </>
+              </table>
             )}
+          </div>
+        )}
+
+        {!loading && data && tab === "ledger" && data.players.length > 0 && (
+          <div className="mt-3 flex shrink-0 justify-end">
+            <button
+              onClick={copyLedger}
+              className="rounded-lg border border-sky-200 bg-sky-100 px-4 py-2 text-sm font-semibold text-sky-700 shadow-sm transition-colors hover:bg-sky-200"
+            >
+              {copied ? "Copied!" : "Copy ledger"}
+            </button>
           </div>
         )}
 
