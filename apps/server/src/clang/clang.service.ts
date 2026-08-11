@@ -167,7 +167,7 @@ export class ClangService {
         const seatIndex = round.turnOrder[round.turnIndex] as number;
         if (!isAway(seatIndex)) break;
         engine.draw(table, round, seatIndex);
-        continue; // may have force-ended the round (empty pile) — let the loop re-check phase
+        continue; // empty pile still moves to awaiting-discard — let the loop re-check phase
       }
       if (round.phase === "awaiting-discard") {
         const seatIndex = round.turnOrder[round.turnIndex] as number;

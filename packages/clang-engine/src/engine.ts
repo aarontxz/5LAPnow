@@ -93,6 +93,7 @@ export class ClangEngine {
       turnIndex: 0,
       instantClangClosedSeats: [],
       pendingEat: null,
+      deckExhausted: false,
       bonusHits,
       actions: [
         { type: "deal", seatIndices: turnOrder },
@@ -143,15 +144,19 @@ export class ClangEngine {
    * On your turn, before you may discard: draw one card from the pile. Must
    * be the first thing you do — `playRank` then discards from this
    * now-6-card hand, so you always get to see what you drew before choosing
-   * what to throw. If the pile is empty, the round force-ends in a neutral
-   * showdown right here instead (see `drawOne`), and no discard ever happens
-   * this turn.
+   * what to throw. If the pile is already empty, you draw nothing and throw
+   * from your current hand instead — this is the round's last possible turn:
+   * once this throw (and any resulting eat chain) resolves, the round ends
+   * (see `finishDiscarderTurn`) rather than passing to another draw.
    */
   draw(table: TableState, round: ClangRoundState, seatIndex: number): void {
     this.requireTurn(round, seatIndex, ["turn", "instant-window"]);
     this.closeInstantClangWindow(round, seatIndex);
-    const drew = this.drawOne(table, round, seatIndex);
-    if (!drew) return; // forced showdown triggered
+    if (round.drawPile.length === 0) {
+      round.deckExhausted = true;
+    } else {
+      this.drawOne(round, seatIndex);
+    }
     round.phase = "awaiting-discard";
   }
 
@@ -177,7 +182,7 @@ export class ClangEngine {
       return;
     }
 
-    this.finishDiscarderTurn(round, { skipCount: 1 });
+    this.finishDiscarderTurn(table, round, { skipCount: 1 });
   }
 
   /** Only legal for the specific eligible next-player, and only if they actually hold a matching card. Starts or continues an eat chain — the original discarder pays all eaters. */
@@ -216,7 +221,7 @@ export class ClangEngine {
     }
 
     round.pendingEat = null;
-    this.finishDiscarderTurn(round, { skipCount: newDepth + 1 });
+    this.finishDiscarderTurn(table, round, { skipCount: newDepth + 1 });
   }
 
   /** Voluntary decline of an available Eat — the decliner's own normal turn still comes up right after. */
@@ -227,7 +232,7 @@ export class ClangEngine {
     const { discarderSeatIndex, rank, chainDepth } = round.pendingEat;
     round.actions.push({ type: "eatDeclined", seatIndex, rank });
     round.pendingEat = null;
-    this.finishDiscarderTurn(round, { skipCount: chainDepth + 1 });
+    this.finishDiscarderTurn(table, round, { skipCount: chainDepth + 1 });
   }
 
   /** On your turn, instead of drawing: reveal all hands, lowest total wins. Only available before you've drawn — once you draw you're committed to discarding. */
@@ -254,32 +259,29 @@ export class ClangEngine {
     return player;
   }
 
-  /**
-   * Draws one card for `seatIndex` from the draw pile. If the pile is empty
-   * (no reshuffle in this ruleset), the round force-ends in a neutral showdown
-   * instead — returns false so the caller knows not to advance the turn.
-   */
-  private drawOne(table: TableState, round: ClangRoundState, seatIndex: number): boolean {
-    if (round.drawPile.length === 0) {
-      this.forcedShowdown(table, round);
-      return false;
-    }
+  /** Draws one card for `seatIndex` from the draw pile. Caller (`draw`) has already confirmed the pile is non-empty. */
+  private drawOne(round: ClangRoundState, seatIndex: number): void {
     const card = round.drawPile.pop() as Card;
     const player = this.requirePlayer(round, seatIndex);
     player.hand.push(card);
     round.actions.push({ type: "draw", seatIndex });
-    return true;
   }
 
   /**
    * Advances the turn by `skipCount` positions. The discarder already drew back in `draw()`,
    * before `playRank`; skipCount encodes: 1 = no eat, N+1 = N eaters in the chain (all their
-   * turns are skipped).
+   * turns are skipped). If this turn's draw found the pile empty (`deckExhausted`), the round
+   * instead ends right here in a forced showdown — this was the round's last possible turn.
    */
   private finishDiscarderTurn(
+    table: TableState,
     round: ClangRoundState,
     opts: { skipCount: number }
   ): void {
+    if (round.deckExhausted) {
+      this.forcedShowdown(table, round);
+      return;
+    }
     round.turnIndex = (round.turnIndex + opts.skipCount) % round.turnOrder.length;
     round.phase = "turn";
   }

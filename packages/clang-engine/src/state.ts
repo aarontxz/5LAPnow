@@ -72,6 +72,10 @@ export interface ClangRoundState {
    * hasn't taken a turn yet themselves. */
   instantClangClosedSeats: number[];
   pendingEat: ClangPendingEat | null;
+  /** Set once a turn's draw finds the pile empty: that seat still plays out its throw (and
+   * any resulting eat chain) using its current hand, but the round ends the moment that
+   * turn's discard/eat sequence finishes — no further turn ever gets to draw. */
+  deckExhausted: boolean;
   /** Starting-hand bounties paid out at deal time (e.g. a Four of a Kind or Straight Flush), independent of the round's eventual outcome. */
   bonusHits: ClangBonusHit[];
   actions: ClangActionLogEntry[];

@@ -522,16 +522,26 @@ export default function TablePage({ params }: { params: Promise<{ id: string }> 
                     </motion.div>
                   )}
                 </AnimatePresence>
-                {clangRound && clangRound.topDiscard.length > 0 && (
-                  <div className="flex flex-col items-center gap-0.5">
-                    <div className="flex gap-0.5 sm:gap-1">
-                      {clangRound.topDiscard.map((c, i) => (
-                        <PlayingCard key={`discard-${i}-${c.rank}-${c.suit}`} card={c} small dealDelay={i * 0.08} />
-                      ))}
+                {clangRound && clangRound.phase !== "complete" && (
+                  <div className="flex items-start gap-3 sm:gap-6">
+                    <div className="flex flex-col items-center gap-0.5">
+                      <PlayingCard card={null} small />
+                      <span className="text-[9px] text-white/40 sm:text-[10px]">
+                        {clangRound.drawPileCount === 0 ? "Pile empty" : `Pile (${clangRound.drawPileCount})`}
+                      </span>
                     </div>
-                    <span className="text-[9px] text-white/40 sm:text-[10px]">
-                      Discard{clangRound.discardPileCount > clangRound.topDiscard.length ? ` (${clangRound.discardPileCount})` : ""}
-                    </span>
+                    {clangRound.topDiscard.length > 0 && (
+                      <div className="flex flex-col items-center gap-0.5">
+                        <div className="flex gap-0.5 sm:gap-1">
+                          {clangRound.topDiscard.map((c, i) => (
+                            <PlayingCard key={`discard-${i}-${c.rank}-${c.suit}`} card={c} small dealDelay={i * 0.08} />
+                          ))}
+                        </div>
+                        <span className="text-[9px] text-white/40 sm:text-[10px]">
+                          Discard{clangRound.discardPileCount > clangRound.topDiscard.length ? ` (${clangRound.discardPileCount})` : ""}
+                        </span>
+                      </div>
+                    )}
                   </div>
                 )}
                 <AnimatePresence>

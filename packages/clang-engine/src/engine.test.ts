@@ -238,28 +238,67 @@ describe("ClangEngine", () => {
     expect(table.seats[1]?.stack).toBe(100);
   });
 
-  it("force-ends the round in a neutral showdown when the draw pile is empty", () => {
+  it("still lets the discarder throw when the pile is empty, then force-ends the round once that turn settles", () => {
     const table = buildTable(2);
     const engine = new ClangEngine();
     const deck = [
-      card(9), card(2), card(2), card(2), card(2), // seat0: 9+2+2+2+2=17 (never gets to discard)
+      card(9), card(2), card(2), card(2), card(2), // seat0: 9+2+2+2+2=17
       card(4), card(4), card(4), card(4), card(4), // seat1: 20
     ]; // no cards left over for the draw pile
     const round = engine.startRoundWithDeck(table, 1, 5, 2, deck);
     expect(round.drawPile).toHaveLength(0);
     const before = totalChips(table);
 
-    // Draw-first: seat0 must draw to take their turn at all, but the pile is
-    // empty, so the round force-ends right here — the discard they would
-    // have made never happens, and hands reveal exactly as dealt.
+    // Draw-first: seat0's draw finds the pile empty, so no card is added, but
+    // they still get to throw from their current hand.
     engine.draw(table, round, 0);
+    expect(round.phase).toBe("awaiting-discard");
+    expect(round.deckExhausted).toBe(true);
 
+    // seat1 holds no 2s, so no eat chain — the round force-ends right here,
+    // after the throw, in a neutral showdown.
+    engine.playRank(table, round, 0, 2);
+
+    expect(round.players[0]?.hand).toEqual([card(9)]);
     expect(round.phase).toBe("complete");
     expect(round.result?.type).toBe("forced");
     expect(round.result?.callerSeatIndex).toBeNull();
-    expect(round.result?.winnerSeatIndices).toEqual([0]); // 8 < 20
+    expect(round.result?.winnerSeatIndices).toEqual([0]); // 9 < 20
     expect(table.seats[0]?.stack).toBe(105);
     expect(table.seats[1]?.stack).toBe(95);
+    expect(totalChips(table)).toBe(before);
+  });
+
+  it("still allows a full eat chain on the deck-exhausted final turn before the round ends", () => {
+    const table = buildTable(3);
+    const engine = new ClangEngine();
+    const deck = [
+      card(8), card(3), card(3), card(3), card(3), // seat0: throws the four 3s
+      card(3), card(7), card(7), card(7), card(7), // seat1: eats one 3
+      card(3), card(6), card(6), card(6), card(6), // seat2: eats the chained 3
+    ]; // no cards left over for the draw pile
+    const round = engine.startRoundWithDeck(table, 1, 5, 2, deck);
+    expect(round.drawPile).toHaveLength(0);
+    const before = totalChips(table);
+
+    engine.draw(table, round, 0);
+    expect(round.deckExhausted).toBe(true);
+    engine.playRank(table, round, 0, 3);
+    expect(round.phase).toBe("awaiting-eat");
+
+    engine.eat(table, round, 1);
+    expect(round.phase).toBe("awaiting-eat"); // chain continues to seat2
+    expect(round.result).toBeNull();
+
+    engine.eat(table, round, 2);
+
+    expect(round.players[0]?.hand).toEqual([card(8)]);
+    expect(round.phase).toBe("complete");
+    expect(round.result?.type).toBe("forced");
+    expect(round.result?.winnerSeatIndices).toEqual([0]); // 8 < 28 < 24... seat0 lowest
+    expect(table.seats[0]?.stack).toBe(106); // -2 -2 (eats paid out) +5 +5 (showdown)
+    expect(table.seats[1]?.stack).toBe(97);
+    expect(table.seats[2]?.stack).toBe(97);
     expect(totalChips(table)).toBe(before);
   });
 
