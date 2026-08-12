@@ -5,6 +5,7 @@ import type {
   CreateTableRequest,
   EffectiveGameConfig,
   GameGenerationRequestView,
+  GoogleSignInRequest,
   TableLedgerResponse,
   TableSnapshot,
   TableSummary,
@@ -43,10 +44,11 @@ export const api = {
   createGuestSession: (body: CreateGuestSessionRequest) =>
     request<CreateGuestSessionResponse>("/auth/guest-session", { method: "POST", body: JSON.stringify(body) }),
   me: () => request<CreateGuestSessionResponse | null>("/auth/me"),
+  signInWithGoogle: (body: GoogleSignInRequest) => request<CreateGuestSessionResponse>("/auth/google", { method: "POST", body: JSON.stringify(body) }),
   listGames: (userId?: string) =>
-    request<Array<{ id: string; name: string; description: string; source: string; engine: "poker" | "clang" | "cardflip"; definition: GameDefinition | null }>>(
-      `/games${userId ? `?userId=${encodeURIComponent(userId)}` : ""}`
-    ),
+    request<
+      Array<{ id: string; name: string; description: string; source: string; engine: "poker" | "clang" | "cardflip"; definition: GameDefinition | null; locked: boolean }>
+    >(`/games${userId ? `?userId=${encodeURIComponent(userId)}` : ""}`),
   createTable: (body: CreateTableRequest) => request<TableSummary>("/tables", { method: "POST", body: JSON.stringify(body) }),
   requestGameGeneration: (body: CreateGameGenerationRequestBody) =>
     request<GameGenerationRequestView>("/games/generate", { method: "POST", body: JSON.stringify(body) }),

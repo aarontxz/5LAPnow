@@ -8,6 +8,7 @@ import { api } from "@/lib/api";
 import { saveSession, type Session } from "@/lib/session";
 import { HoverBorderGradient } from "@/components/aceternity/hover-border-gradient";
 import { GameSelect } from "@/components/table/GameSelect";
+import { GoogleSignInButton } from "@/components/GoogleSignInButton";
 
 function extractErrorMessage(err: unknown): string {
   const raw = (err as Error).message ?? "";
@@ -42,6 +43,8 @@ interface GameOption {
   source: string;
   engine: "poker" | "clang" | "cardflip";
   definition: GameDefinition | null;
+  /** True if this game needs a premium unlock the current account doesn't have — shown, not hidden, with a paywall badge. */
+  locked: boolean;
 }
 
 export default function LobbyPage() {
@@ -75,7 +78,7 @@ export default function LobbyPage() {
   async function refresh(userId?: string) {
     const gamesRes = await api.listGames(userId);
     setGames(gamesRes);
-    setSelectedGameId((prev) => prev || gamesRes[0]?.id || "");
+    setSelectedGameId((prev) => prev || gamesRes.find((g) => !g.locked)?.id || gamesRes[0]?.id || "");
   }
 
   useEffect(() => {
@@ -105,10 +108,25 @@ export default function LobbyPage() {
     }
   }
 
+  async function handleGoogleCredential(idToken: string) {
+    try {
+      const updated = await api.signInWithGoogle({ idToken });
+      saveSession(updated);
+      setSession(updated);
+      void refresh(updated.userId);
+    } catch (err) {
+      setError(extractErrorMessage(err));
+    }
+  }
+
   async function createTable() {
     const game = games.find((g) => g.id === selectedGameId);
     if (!game) {
       setError("Pick a game first");
+      return;
+    }
+    if (game.locked) {
+      setError(`"${game.name}" needs premium access — reach out to unlock it.`);
       return;
     }
     try {
@@ -129,6 +147,19 @@ export default function LobbyPage() {
 
   return (
     <main className="mx-auto flex w-full max-w-4xl flex-1 flex-col gap-6 px-4 py-8 sm:gap-8 sm:px-6 sm:py-12">
+      <section className="flex flex-col items-start justify-between gap-3 rounded-2xl border border-white/10 bg-white/5 p-4 sm:flex-row sm:items-center sm:p-6">
+        {session.googleLinked ? (
+          <p className="text-sm text-white/60">
+            Signed in as <span className="text-white">{session.email}</span>
+          </p>
+        ) : (
+          <>
+            <p className="text-sm text-white/60">Sign in with Google to host a table or generate a custom game.</p>
+            <GoogleSignInButton onCredential={handleGoogleCredential} />
+          </>
+        )}
+      </section>
+
       <section className="rounded-2xl border border-white/10 bg-white/5 p-4 sm:p-6">
         <h2 className="mb-4 text-lg font-medium">Create a table</h2>
         <div className="flex flex-col gap-4 sm:flex-row sm:items-end">
@@ -140,10 +171,16 @@ export default function LobbyPage() {
               onChange={setSelectedGameId}
             />
           </div>
-          <HoverBorderGradient onClick={createTable} className="w-full sm:w-auto" containerClassName="w-full sm:w-auto">
+          <HoverBorderGradient
+            onClick={createTable}
+            disabled={!session.googleLinked}
+            className="w-full sm:w-auto"
+            containerClassName={`w-full sm:w-auto ${!session.googleLinked ? "opacity-40" : ""}`}
+          >
             Create table
           </HoverBorderGradient>
         </div>
+        {!session.googleLinked && <p className="mt-3 text-sm text-white/40">Sign in with Google above to host a table.</p>}
         {error && <p className="mt-3 text-sm text-red-400">{error}</p>}
       </section>
 
@@ -161,9 +198,15 @@ export default function LobbyPage() {
           className="w-full rounded-lg border border-white/20 bg-black/40 px-3 py-2.5 text-base text-white"
         />
         <div className="mt-3 flex flex-wrap items-center gap-3">
-          <HoverBorderGradient onClick={submitGeneration} disabled={genSubmitting} className="w-full sm:w-auto" containerClassName="w-full sm:w-auto">
+          <HoverBorderGradient
+            onClick={submitGeneration}
+            disabled={genSubmitting || !session.googleLinked}
+            className="w-full sm:w-auto"
+            containerClassName={`w-full sm:w-auto ${!session.googleLinked ? "opacity-40" : ""}`}
+          >
             {genSubmitting ? "Submitting…" : "Generate game"}
           </HoverBorderGradient>
+          {!session.googleLinked && <p className="text-sm text-white/40">Sign in with Google above to generate a game.</p>}
         </div>
         {genError && <p className="mt-3 text-sm text-red-400">{genError}</p>}
         {genSuccess && <p className="mt-3 text-sm text-emerald-400">{genSuccess}</p>}

@@ -7,6 +7,8 @@ export interface GameOption {
   id: string;
   name: string;
   description: string;
+  /** True if this game needs a premium unlock the current account doesn't have. */
+  locked?: boolean;
 }
 
 export function GameSelect({
@@ -68,12 +70,22 @@ export function GameSelect({
                   <button
                     key={g.id}
                     type="button"
-                    onClick={() => { onChange(g.id); setOpen(false); }}
-                    className={`flex w-full items-start gap-2.5 px-3 py-3 text-left transition-colors hover:bg-white/10 ${isActive ? "text-emerald-400" : "text-white/80"}`}
+                    disabled={g.locked}
+                    onClick={() => { if (g.locked) return; onChange(g.id); setOpen(false); }}
+                    className={`flex w-full items-start gap-2.5 px-3 py-3 text-left transition-colors ${
+                      g.locked ? "cursor-not-allowed opacity-50" : "hover:bg-white/10"
+                    } ${isActive ? "text-emerald-400" : "text-white/80"}`}
                   >
                     <span className={`mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full ${isActive ? "bg-emerald-400" : "bg-white/20"}`} />
-                    <div className="min-w-0">
-                      <p className="text-sm font-medium">{g.name}</p>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-1.5">
+                        <p className="truncate text-sm font-medium">{g.name}</p>
+                        {g.locked && (
+                          <span className="shrink-0 rounded-full bg-amber-400/15 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-amber-300">
+                            🔒 Premium
+                          </span>
+                        )}
+                      </div>
                       {g.description && (
                         <p className="mt-0.5 text-[11px] leading-snug text-white/40 line-clamp-2">{g.description}</p>
                       )}

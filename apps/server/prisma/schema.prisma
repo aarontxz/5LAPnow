@@ -11,6 +11,10 @@ model User {
   id                     String                  @id @default(uuid())
   /// Not collected until the guest first requests a seat at a table; nameless guests can browse the lobby freely.
   displayName            String?
+  /// Set once this guest links a Google account (see UsersService.linkGoogleAccount) — required to host a
+  /// table or request AI game generation. Null means "still an anonymous guest".
+  googleId               String?                 @unique
+  email                  String?                 @unique
   createdAt              DateTime                @default(now())
   gameDefinitions        GameDefinition[]
   seats                  Seat[]
@@ -18,6 +22,7 @@ model User {
   ownedTables            Table[]
   gameGenerationRequests GameGenerationRequest[]
   chatMessages           ChatMessage[]
+  gameDefinitionAccess   GameDefinitionAccess[]
 }
 
 enum GameDefinitionSource {
@@ -46,12 +51,29 @@ model GameDefinition {
   /// ClangGameDefinition (@5lapnow/clang-engine) for Clang, or CardFlipGameDefinition (@5lapnow/card-flip-engine)
   /// for Card Flip — each validated against its own schema before being persisted.
   definition         Json?
+  /// When true, only Google-signed-in users with a matching GameDefinitionAccess row can see or host this
+  /// game — granted manually (see apps/server/scripts/grant-game-access.ts), not self-serve.
+  restricted          Boolean                 @default(false)
   createdById        String?
   createdBy          User?                   @relation(fields: [createdById], references: [id])
   createdAt          DateTime                @default(now())
   tables             Table[]
   hands              Hand[]
   generationRequests GameGenerationRequest[]
+  access             GameDefinitionAccess[]
+}
+
+/// Manually-granted per-account access to a `restricted` GameDefinition — see GamesService.list()
+/// and TablesService.createTable() for where this is enforced.
+model GameDefinitionAccess {
+  id               String         @id @default(uuid())
+  userId           String
+  user             User           @relation(fields: [userId], references: [id])
+  gameDefinitionId String
+  gameDefinition   GameDefinition @relation(fields: [gameDefinitionId], references: [id])
+  createdAt        DateTime       @default(now())
+
+  @@unique([userId, gameDefinitionId])
 }
 
 enum GameGenerationStatus {

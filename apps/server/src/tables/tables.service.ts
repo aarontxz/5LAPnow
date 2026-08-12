@@ -141,6 +141,9 @@ export class TablesService implements OnModuleInit {
 
   async createTable(dto: CreateTableRequest, ownerId: string, ownerDisplayName: string | null): Promise<TableSummary> {
     const defRow = await this.gamesService.getRow(dto.gameDefinitionId);
+    if (!(await this.gamesService.canAccessGameDefinition(ownerId, defRow))) {
+      throw new ForbiddenException(`You don't have access to host "${defRow.name}"`);
+    }
     const gameKind = defRow.engine;
     const gameDefinition = gameKind === "poker" ? await this.gamesService.getDefinition(defRow.id) : null;
 

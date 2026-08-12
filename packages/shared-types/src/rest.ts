@@ -13,6 +13,15 @@ export interface CreateGuestSessionRequest {
 export interface CreateGuestSessionResponse {
   userId: string;
   displayName: string | null;
+  /** True once this account has linked a Google sign-in — required to host a table or request AI game generation. */
+  googleLinked: boolean;
+  /** The linked Google account's email, for display (e.g. "Signed in as …") — null until googleLinked. */
+  email: string | null;
+}
+
+export interface GoogleSignInRequest {
+  /** The Google ID token from the client's Google Identity Services sign-in. */
+  idToken: string;
 }
 
 export interface CreateTableRequest {

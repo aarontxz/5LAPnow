@@ -11,12 +11,27 @@ import { PrismaService } from "../prisma/prisma.service";
 export class GamesService {
   constructor(private readonly prisma: PrismaService) {}
 
+  /**
+   * Returns every builtin game (even ones the caller can't host) plus the caller's own
+   * AI-generated ones, each flagged `locked` — the UI shows locked games with a paywall
+   * badge rather than hiding them. `TablesService.createTable` is the actual enforcement
+   * point (via `canAccessGameDefinition`); `locked` here is display-only.
+   */
   async list(userId?: string) {
     const rows = await this.prisma.gameDefinition.findMany({
-      where: userId ? { OR: [{ source: "builtin" }, { createdById: userId }] } : { source: "builtin" },
+      where: { OR: [{ source: "builtin" }, ...(userId ? [{ createdById: userId }] : [])] },
       orderBy: { createdAt: "asc" },
     });
-    return rows.map((row) => ({
+
+    const grantedIds = userId
+      ? new Set(
+          (await this.prisma.gameDefinitionAccess.findMany({ where: { userId }, select: { gameDefinitionId: true } })).map(
+            (g) => g.gameDefinitionId
+          )
+        )
+      : new Set<string>();
+
+    const games = rows.map((row) => ({
       id: row.id,
       name: row.name,
       description: row.description,
@@ -24,7 +39,11 @@ export class GamesService {
       engine: row.engine,
       /** Poker's own GameDefinition shape when `engine` is poker; the raw ClangGameDefinition/CardFlipGameDefinition JSON otherwise. */
       definition: row.engine === "poker" ? (row.definition ? (row.definition as unknown as GameDefinition) : null) : row.definition,
+      locked: row.restricted && row.createdById !== userId && !grantedIds.has(row.id),
     }));
+
+    // Unlocked (accessible) games first, locked ones after — each group keeps its createdAt order.
+    return games.sort((a, b) => Number(a.locked) - Number(b.locked));
   }
 
   /** Poker-only: parses and validates the DeclarativeEngine-shaped definition JSON. Throws for non-poker rows. */
@@ -60,10 +79,21 @@ export class GamesService {
     return parsed.data;
   }
 
-  async getRow(id: string): Promise<{ id: string; name: string; description: string; engine: GameEngine; definition: unknown }> {
+  async getRow(
+    id: string
+  ): Promise<{ id: string; name: string; description: string; engine: GameEngine; definition: unknown; restricted: boolean; createdById: string | null }> {
     const row = await this.prisma.gameDefinition.findUnique({ where: { id } });
     if (!row) throw new NotFoundException(`Game definition ${id} not found`);
     return row;
+  }
+
+  /** Anyone can access an unrestricted game or one they created themselves; a restricted builtin needs a manually-granted GameDefinitionAccess row (see scripts/grant-game-access.ts). */
+  async canAccessGameDefinition(userId: string, row: { id: string; restricted: boolean; createdById: string | null }): Promise<boolean> {
+    if (!row.restricted || row.createdById === userId) return true;
+    const grant = await this.prisma.gameDefinitionAccess.findUnique({
+      where: { userId_gameDefinitionId: { userId, gameDefinitionId: row.id } },
+    });
+    return grant !== null;
   }
 
   async requestGeneration(userId: string, prompt: string): Promise<GameGenerationRequestView> {

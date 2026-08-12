@@ -1,7 +1,7 @@
-import { Controller, Body, Get, Param, Post, UseGuards } from "@nestjs/common";
+import { Controller, Body, ForbiddenException, Get, Param, Post, UseGuards } from "@nestjs/common";
 import type { CreateTableRequest } from "@5lapnow/shared-types";
 import { TablesService } from "./tables.service";
-import { GuestAuthGuard } from "../users/guest-auth.guard";
+import { GuestAuthGuard, type AuthedRequest } from "../users/guest-auth.guard";
 import { CurrentUser } from "../users/current-user.decorator";
 
 @Controller("tables")
@@ -10,7 +10,8 @@ export class TablesController {
 
   @Post()
   @UseGuards(GuestAuthGuard)
-  create(@Body() body: CreateTableRequest, @CurrentUser() user: { id: string; displayName: string | null }) {
+  create(@Body() body: CreateTableRequest, @CurrentUser() user: AuthedRequest["user"]) {
+    if (!user.googleId) throw new ForbiddenException("Sign in with Google to host a table");
     return this.tablesService.createTable(body, user.id, user.displayName);
   }
 

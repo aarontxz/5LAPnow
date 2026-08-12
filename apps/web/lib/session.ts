@@ -6,6 +6,10 @@ export interface Session {
   userId: string;
   /** Null until the guest has requested a seat at a table for the first time. */
   displayName: string | null;
+  /** True once this account has linked a Google sign-in — required to host a table or request AI game generation. */
+  googleLinked: boolean;
+  /** The linked Google account's email, for display — null until googleLinked. */
+  email: string | null;
 }
 
 export function loadSession(): Session | null {
