@@ -40,7 +40,7 @@ export function GoogleSignInButton({ onCredential }: { onCredential: (idToken: s
         client_id: clientId!,
         callback: (response) => onCredentialRef.current(response.credential),
       });
-      window.google.accounts.id.renderButton(containerRef.current, { theme: "outline", size: "medium", text: "signin_with", shape: "pill" });
+      window.google.accounts.id.renderButton(containerRef.current, { theme: "filled_black", size: "medium", text: "signin_with", shape: "pill" });
       // eslint-disable-next-line no-console
       console.log("[GoogleSignInButton] rendered");
     }
