@@ -308,7 +308,7 @@ export default function TablePage({ params }: { params: Promise<{ id: string }> 
             ⚙️ Settings
           </button>
         )}
-        {mySeat && (
+        {mySeat && !isOwner && (
           <button
             onClick={() => setSeatAway(mySeatIndex!, mySeat.status !== "sitting-out")}
             className={`rounded-full border px-3 py-1.5 text-xs font-medium transition-colors ${

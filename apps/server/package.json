@@ -12,7 +12,8 @@
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
     "seed": "ts-node --transpile-only prisma/seed.ts",
-    "grant-game-access": "ts-node --transpile-only scripts/grant-game-access.ts"
+    "grant-game-access": "ts-node --transpile-only scripts/grant-game-access.ts",
+    "grant-premium": "ts-node --transpile-only scripts/grant-premium.ts"
   },
   "dependencies": {
     "@5lapnow/card-flip-engine": "workspace:*",

@@ -3,8 +3,10 @@ import { PrismaClient } from "@prisma/client";
 const prisma = new PrismaClient();
 
 /**
- * Manually grants a signed-in account access to a `restricted` GameDefinition — the only way
- * this happens for now (see GameDefinitionAccess in prisma/schema.prisma). Usage:
+ * Manually grants a signed-in account explicit access to a PRIVATE or PREMIUM_HOST
+ * GameDefinition, overriding the normal visibility/Premium rules for that one user and game
+ * (see GameDefinitionAccess in prisma/schema.prisma). For granting Premium itself, use
+ * grant-premium.ts instead. Usage:
  *
  *   pnpm --filter @5lapnow/server grant-game-access <email> <gameDefinitionId>
  */

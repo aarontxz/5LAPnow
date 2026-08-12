@@ -16,6 +16,9 @@ model User {
   googleId               String?                 @unique
   email                  String?                 @unique
   createdAt              DateTime                @default(now())
+  /// Manually set (Google Form purchase, see PREMIUM_PRICING.md / scripts/grant-premium.ts) — premium is
+  /// active while this is in the future. Null or past means no active subscription.
+  premiumUntil           DateTime?
   gameDefinitions        GameDefinition[]
   seats                  Seat[]
   chipTransactions       ChipTransaction[]
@@ -41,6 +44,20 @@ enum GameEngine {
   cardflip
 }
 
+/// See GamesService.canAccessGameDefinition for the exact rules enforced from this.
+enum GameVisibility {
+  /// Visible to everyone in the game list, hostable by anyone — no account/premium requirement.
+  PUBLIC
+  /// Only visible to its creator (plus anyone with a manually-granted GameDefinitionAccess row).
+  /// The creator needs an active Premium subscription (User.premiumUntil) to host it — see
+  /// PREMIUM_PRICING.md's "Game Request" tier.
+  PRIVATE
+  /// Visible to everyone in the game list, but hosting requires an active Premium subscription
+  /// (creator included) or a manually-granted GameDefinitionAccess row — see PREMIUM_PRICING.md's
+  /// "Premium Subscription" and "Premium Game Promotion" tiers.
+  PREMIUM_HOST
+}
+
 model GameDefinition {
   id                 String                  @id
   name               String
@@ -51,9 +68,7 @@ model GameDefinition {
   /// ClangGameDefinition (@5lapnow/clang-engine) for Clang, or CardFlipGameDefinition (@5lapnow/card-flip-engine)
   /// for Card Flip — each validated against its own schema before being persisted.
   definition         Json?
-  /// When true, only Google-signed-in users with a matching GameDefinitionAccess row can see or host this
-  /// game — granted manually (see apps/server/scripts/grant-game-access.ts), not self-serve.
-  restricted          Boolean                 @default(false)
+  visibility         GameVisibility          @default(PUBLIC)
   createdById        String?
   createdBy          User?                   @relation(fields: [createdById], references: [id])
   createdAt          DateTime                @default(now())
@@ -63,8 +78,9 @@ model GameDefinition {
   access             GameDefinitionAccess[]
 }
 
-/// Manually-granted per-account access to a `restricted` GameDefinition — see GamesService.list()
-/// and TablesService.createTable() for where this is enforced.
+/// Manually-granted per-account access to a non-PUBLIC GameDefinition — overrides the normal
+/// PRIVATE/PREMIUM_HOST rules for that one user (see apps/server/scripts/grant-game-access.ts).
+/// Enforced in GamesService.list() and GamesService.canAccessGameDefinition().
 model GameDefinitionAccess {
   id               String         @id @default(uuid())
   userId           String

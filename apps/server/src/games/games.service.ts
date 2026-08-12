@@ -1,5 +1,5 @@
 import { BadRequestException, Injectable, NotFoundException } from "@nestjs/common";
-import { GameEngine } from "@prisma/client";
+import { GameEngine, GameVisibility } from "@prisma/client";
 import { GameDefinition, safeParseGameDefinition } from "@5lapnow/game-engine";
 
 import { ClangGameDefinition, safeParseClangGameDefinition } from "@5lapnow/clang-engine";
@@ -12,35 +12,57 @@ export class GamesService {
   constructor(private readonly prisma: PrismaService) {}
 
   /**
-   * Returns every builtin game (even ones the caller can't host) plus the caller's own
-   * AI-generated ones, each flagged `locked` — the UI shows locked games with a paywall
-   * badge rather than hiding them. `TablesService.createTable` is the actual enforcement
-   * point (via `canAccessGameDefinition`); `locked` here is display-only.
+   * Returns every PUBLIC/PREMIUM_HOST game plus the caller's own (PRIVATE included) and any
+   * PRIVATE game they've been explicitly granted, each flagged `locked` — the UI shows locked
+   * games with a paywall badge rather than hiding them. Other accounts' PRIVATE games never
+   * appear at all. `TablesService.createTable` is the actual hosting-enforcement point (via
+   * `canAccessGameDefinition`); `locked` here is display-only.
    */
   async list(userId?: string) {
     const rows = await this.prisma.gameDefinition.findMany({
-      where: { OR: [{ source: "builtin" }, ...(userId ? [{ createdById: userId }] : [])] },
+      where: {
+        OR: [
+          { visibility: { in: ["PUBLIC", "PREMIUM_HOST"] } },
+          ...(userId ? [{ createdById: userId }, { access: { some: { userId } } }] : []),
+        ],
+      },
       orderBy: { createdAt: "asc" },
     });
 
-    const grantedIds = userId
-      ? new Set(
-          (await this.prisma.gameDefinitionAccess.findMany({ where: { userId }, select: { gameDefinitionId: true } })).map(
-            (g) => g.gameDefinitionId
-          )
-        )
-      : new Set<string>();
+    const [grantedIds, premium] = await Promise.all([
+      userId
+        ? this.prisma.gameDefinitionAccess
+            .findMany({ where: { userId }, select: { gameDefinitionId: true } })
+            .then((rows) => new Set(rows.map((g) => g.gameDefinitionId)))
+        : Promise.resolve(new Set<string>()),
+      userId ? this.isPremium(userId) : Promise.resolve(false),
+    ]);
 
-    const games = rows.map((row) => ({
-      id: row.id,
-      name: row.name,
-      description: row.description,
-      source: row.source,
-      engine: row.engine,
-      /** Poker's own GameDefinition shape when `engine` is poker; the raw ClangGameDefinition/CardFlipGameDefinition JSON otherwise. */
-      definition: row.engine === "poker" ? (row.definition ? (row.definition as unknown as GameDefinition) : null) : row.definition,
-      locked: row.restricted && row.createdById !== userId && !grantedIds.has(row.id),
-    }));
+    const games = rows.map((row) => {
+      const isOwner = row.createdById === userId;
+      const hasGrant = grantedIds.has(row.id);
+      const locked =
+        row.visibility === "PUBLIC"
+          ? false
+          : isOwner
+            ? !premium
+            : hasGrant
+              ? false
+              : row.visibility === "PREMIUM_HOST"
+                ? !premium
+                : true; // PRIVATE, not owner, no grant
+
+      return {
+        id: row.id,
+        name: row.name,
+        description: row.description,
+        source: row.source,
+        engine: row.engine,
+        /** Poker's own GameDefinition shape when `engine` is poker; the raw ClangGameDefinition/CardFlipGameDefinition JSON otherwise. */
+        definition: row.engine === "poker" ? (row.definition ? (row.definition as unknown as GameDefinition) : null) : row.definition,
+        locked,
+      };
+    });
 
     // Unlocked (accessible) games first, locked ones after — each group keeps its createdAt order.
     return games.sort((a, b) => Number(a.locked) - Number(b.locked));
@@ -81,19 +103,43 @@ export class GamesService {
 
   async getRow(
     id: string
-  ): Promise<{ id: string; name: string; description: string; engine: GameEngine; definition: unknown; restricted: boolean; createdById: string | null }> {
+  ): Promise<{
+    id: string;
+    name: string;
+    description: string;
+    engine: GameEngine;
+    definition: unknown;
+    visibility: GameVisibility;
+    createdById: string | null;
+  }> {
     const row = await this.prisma.gameDefinition.findUnique({ where: { id } });
     if (!row) throw new NotFoundException(`Game definition ${id} not found`);
     return row;
   }
 
-  /** Anyone can access an unrestricted game or one they created themselves; a restricted builtin needs a manually-granted GameDefinitionAccess row (see scripts/grant-game-access.ts). */
-  async canAccessGameDefinition(userId: string, row: { id: string; restricted: boolean; createdById: string | null }): Promise<boolean> {
-    if (!row.restricted || row.createdById === userId) return true;
+  /**
+   * PUBLIC games are hostable by anyone. PRIVATE/PREMIUM_HOST games are hostable by their
+   * creator only while Premium is active (User.premiumUntil in the future), by anyone with a
+   * manually-granted GameDefinitionAccess row (see scripts/grant-game-access.ts) regardless of
+   * Premium, or — PREMIUM_HOST only — by any other currently-Premium account.
+   */
+  async canAccessGameDefinition(
+    userId: string,
+    row: { id: string; visibility: GameVisibility; createdById: string | null }
+  ): Promise<boolean> {
+    if (row.visibility === "PUBLIC") return true;
+    if (row.createdById === userId) return this.isPremium(userId);
     const grant = await this.prisma.gameDefinitionAccess.findUnique({
       where: { userId_gameDefinitionId: { userId, gameDefinitionId: row.id } },
     });
-    return grant !== null;
+    if (grant) return true;
+    return row.visibility === "PREMIUM_HOST" && (await this.isPremium(userId));
+  }
+
+  /** True while User.premiumUntil is set and in the future — see PREMIUM_PRICING.md / scripts/grant-premium.ts. */
+  async isPremium(userId: string): Promise<boolean> {
+    const user = await this.prisma.user.findUnique({ where: { id: userId }, select: { premiumUntil: true } });
+    return !!user?.premiumUntil && user.premiumUntil > new Date();
   }
 
   async requestGeneration(userId: string, prompt: string): Promise<GameGenerationRequestView> {

@@ -516,6 +516,9 @@ export class TablesService implements OnModuleInit {
     const runtime = this.getRuntimeTable(tableId);
     if (requesterUserId !== runtime.ownerId) throw new ForbiddenException("Only the table owner can set the next game");
     const row = await this.gamesService.getRow(gameDefinitionId);
+    if (!(await this.gamesService.canAccessGameDefinition(requesterUserId, row))) {
+      throw new ForbiddenException(`You don't have access to host "${row.name}"`);
+    }
     runtime.nextGameOverride = { gameDefinitionId: row.id, gameName: row.name };
     this.emitChanged(tableId);
   }
