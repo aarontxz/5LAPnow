@@ -5,10 +5,13 @@ import { useRouter } from "next/navigation";
 import type { GameDefinition } from "@5lapnow/game-engine";
 import { validateGameGenerationPrompt, type GameGenerationRequestView } from "@5lapnow/shared-types";
 import { api } from "@/lib/api";
-import { saveSession, type Session } from "@/lib/session";
+import { clearSession, saveSession, type Session } from "@/lib/session";
 import { HoverBorderGradient } from "@/components/aceternity/hover-border-gradient";
 import { GameSelect } from "@/components/table/GameSelect";
 import { GoogleSignInButton } from "@/components/GoogleSignInButton";
+
+/** Sells Premium/game-request/promotion tiers — see PREMIUM_PRICING.md for the full offer text. */
+const PREMIUM_FORM_URL = "https://forms.gle/bbYYd8v6RXEHaaaFA";
 
 function extractErrorMessage(err: unknown): string {
   const raw = (err as Error).message ?? "";
@@ -119,6 +122,16 @@ export default function LobbyPage() {
     }
   }
 
+  async function handleSignOut() {
+    await api.logout().catch(() => {});
+    clearSession();
+    setSelectedGameId("");
+    const fresh = await api.createGuestSession({});
+    saveSession(fresh);
+    setSession(fresh);
+    void refresh(fresh.userId);
+  }
+
   async function createTable() {
     const game = games.find((g) => g.id === selectedGameId);
     if (!game) {
@@ -153,11 +166,25 @@ export default function LobbyPage() {
             Signed in as <span className="text-white">{session.email}</span>
           </p>
         ) : (
-          <>
-            <p className="text-sm text-white/60">Sign in with Google to host a table or generate a custom game.</p>
-            <GoogleSignInButton onCredential={handleGoogleCredential} />
-          </>
+          <p className="text-sm text-white/60">Sign in with Google to host a table or generate a custom game.</p>
         )}
+        <div className="flex items-center gap-4">
+          <a
+            href={PREMIUM_FORM_URL}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-sm font-medium text-amber-300 hover:text-amber-200"
+          >
+            ⭐ Get Premium
+          </a>
+          {session.googleLinked ? (
+            <button onClick={handleSignOut} className="text-sm text-white/40 hover:text-white/70">
+              Sign out
+            </button>
+          ) : (
+            <GoogleSignInButton onCredential={handleGoogleCredential} />
+          )}
+        </div>
       </section>
 
       <section className="rounded-2xl border border-white/10 bg-white/5 p-4 sm:p-6">

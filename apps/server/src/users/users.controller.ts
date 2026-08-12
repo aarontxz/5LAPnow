@@ -86,4 +86,16 @@ export class UsersController {
 
     return this.toSessionResponse(user);
   }
+
+  /**
+   * Clears the guest cookie so a stale identity can't be picked back up server-side — the client
+   * is responsible for also clearing its stored bearer token (see lib/session.ts's clearSession).
+   * A following POST /auth/guest-session then has no identity to reuse and mints a brand-new
+   * anonymous guest. Doesn't touch the User row itself, so signing back in with the same Google
+   * account later still resolves to it (see UsersService.linkGoogleAccount).
+   */
+  @Post("logout")
+  logout(@Res({ passthrough: true }) res: Response): void {
+    res.clearCookie(GUEST_COOKIE_NAME);
+  }
 }

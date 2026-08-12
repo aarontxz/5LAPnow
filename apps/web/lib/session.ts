@@ -26,3 +26,7 @@ export function loadSession(): Session | null {
 export function saveSession(session: Session): void {
   window.localStorage.setItem(STORAGE_KEY, JSON.stringify(session));
 }
+
+export function clearSession(): void {
+  window.localStorage.removeItem(STORAGE_KEY);
+}

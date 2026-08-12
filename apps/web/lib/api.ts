@@ -45,6 +45,7 @@ export const api = {
     request<CreateGuestSessionResponse>("/auth/guest-session", { method: "POST", body: JSON.stringify(body) }),
   me: () => request<CreateGuestSessionResponse | null>("/auth/me"),
   signInWithGoogle: (body: GoogleSignInRequest) => request<CreateGuestSessionResponse>("/auth/google", { method: "POST", body: JSON.stringify(body) }),
+  logout: () => request<void>("/auth/logout", { method: "POST" }),
   listGames: (userId?: string) =>
     request<
       Array<{ id: string; name: string; description: string; source: string; engine: "poker" | "clang" | "cardflip"; definition: GameDefinition | null; locked: boolean }>
