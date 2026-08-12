@@ -27,7 +27,11 @@ export function GoogleSignInButton({ onCredential }: { onCredential: (idToken: s
 
   useEffect(() => {
     const clientId = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID;
-    if (!clientId) return;
+    if (!clientId) {
+      // eslint-disable-next-line no-console
+      console.warn("[GoogleSignInButton] NEXT_PUBLIC_GOOGLE_CLIENT_ID is unset in this running process — restart `pnpm dev` after editing .env.local, a hot-reload won't pick it up.");
+      return;
+    }
 
     function render() {
       if (!window.google || !containerRef.current) return;
@@ -37,6 +41,13 @@ export function GoogleSignInButton({ onCredential }: { onCredential: (idToken: s
         callback: (response) => onCredentialRef.current(response.credential),
       });
       window.google.accounts.id.renderButton(containerRef.current, { theme: "outline", size: "medium", text: "signin_with", shape: "pill" });
+      // eslint-disable-next-line no-console
+      console.log("[GoogleSignInButton] rendered");
+    }
+
+    function onLoadError() {
+      // eslint-disable-next-line no-console
+      console.error("[GoogleSignInButton] Failed to load", GIS_SCRIPT_SRC, "— likely blocked by an ad blocker/privacy extension, or a network/firewall issue.");
     }
 
     if (window.google) {
@@ -52,7 +63,11 @@ export function GoogleSignInButton({ onCredential }: { onCredential: (idToken: s
       document.head.appendChild(script);
     }
     script.addEventListener("load", render, { once: true });
-    return () => script?.removeEventListener("load", render);
+    script.addEventListener("error", onLoadError, { once: true });
+    return () => {
+      script?.removeEventListener("load", render);
+      script?.removeEventListener("error", onLoadError);
+    };
   }, []);
 
   if (!process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID) return null;
