@@ -8,7 +8,6 @@
 :root {
   --background: #171717;
   --foreground: #ededed;
-  color-scheme: dark;
 }
 
 @theme inline {
