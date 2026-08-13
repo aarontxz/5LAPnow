@@ -70,6 +70,8 @@ export interface ClientToServerEvents {
   "seat:remove": (payload: SeatIndexPayload) => void;
   /** Owner-only: marks a seated player away (skipped for future deals) or back active. */
   "seat:setAway": (payload: SeatAwayPayload) => void;
+  /** Queues (or cancels) going away once the currently live hand/round ends, instead of immediately — lets a player finish out a hand they're already dealt into. */
+  "seat:setAwayAfterHand": (payload: SeatAwayPayload) => void;
   /** Owner-only: hands table ownership to the player in this seat. */
   "table:transferOwnership": (payload: SeatIndexPayload) => void;
   /** Owner-only: deals the next hand/round using the current or queued game — poker or Clang, resolved server-side. */

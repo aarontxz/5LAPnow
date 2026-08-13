@@ -21,6 +21,8 @@ export interface PublicSeatView {
   status: SeatStatus;
   /** Owner queued a stack change while a hand was in progress; takes effect when the next hand starts. */
   pendingStackAdjustment: number | null;
+  /** This seat chose "away once this hand ends" — still playing normally right now, but flips to sitting-out the moment the live hand/round settles. */
+  awayAfterHand: boolean;
 }
 
 /** One scoring category's live hand-strength readout (e.g. "Top Board", "Hand Strength" for point-race games; a single unlabeled entry for standard single-board games). `description` is null until enough cards are on the table to evaluate that specific category yet. */
@@ -205,4 +207,6 @@ export interface TableSnapshot {
   clangLastStake: number | null;
   clangLastEatPaymentPerCard: number | null;
   cardFlipRound: CardFlipRoundView | null;
+  /** `Date.now()`-comparable timestamp before which the owner's Start click will be rejected (a brief cooldown after the previous hand/round settles) — null once that cooldown has elapsed or no hand/round has completed yet. */
+  canStartAt: number | null;
 }

@@ -51,7 +51,12 @@ function buildTable(numPlayers: number) {
   return table;
 }
 
-/** Checks everyone through the one betting round (preflop) so the engine auto-advances through the non-betting redraw streets. */
+/**
+ * Checks everyone through the one betting round (preflop), then drives the
+ * non-betting redraw/community streets forward one at a time via
+ * `continueDealing` — mirroring what a real caller (the server) now has to
+ * do since the engine no longer auto-recurses through those streets itself.
+ */
 function checkThroughPreflop(engine: DeclarativeEngine, table: ReturnType<typeof buildTable>, hand: ReturnType<DeclarativeEngine["initHand"]>) {
   let iterations = 0;
   while (hand.phase === "betting" && iterations < 100) {
@@ -61,6 +66,7 @@ function checkThroughPreflop(engine: DeclarativeEngine, table: ReturnType<typeof
     const legal = engine.getLegalActions(table, hand, seatIndex);
     engine.applyAction(table, hand, seatIndex, legal.canCheck ? { type: "check" } : { type: "call" });
   }
+  while (engine.hasMoreDealing(hand)) engine.continueDealing(table, hand);
 }
 
 // Same shape as REDRAW_TEST_GAME but with modest targets that a 2-player,

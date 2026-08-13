@@ -41,12 +41,20 @@ import {
   resolvePendingStackAdjustment,
   captureStacksBefore,
   mustShowSeatsFromResults,
+  START_COOLDOWN_MS,
 } from "./table-snapshot";
 import { buildPokerReplay } from "./replay/poker-replay";
 import { buildClangReplay, ClangRoundReplayRow } from "./replay/clang-replay";
 import { buildCardFlipReplay, CardFlipRoundReplayRow } from "./replay/cardflip-replay";
 
 type TableChangeListener = (tableId: string) => void;
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/** Pause between streets dealt with nobody left to act on them (all-in runouts, deal-only streets) — so the reveal reads as a beat-by-beat dealer sequence instead of the whole rest of the board landing in one instant update. */
+const STREET_REVEAL_DELAY_MS = 1500;
 
 @Injectable()
 export class TablesService implements OnModuleInit {
@@ -143,6 +151,8 @@ export class TablesService implements OnModuleInit {
         nextGameOverride: null,
         gameConfigOverrides: (row.gameConfigOverrides as TableGameConfigOverrides | null) ?? {},
         stacksBeforeCurrentRound: null,
+        roundEndedAt: null,
+        awayAfterHandSeats: new Set(),
       });
     }
   }
@@ -209,6 +219,8 @@ export class TablesService implements OnModuleInit {
       nextGameOverride: null,
       gameConfigOverrides: {},
       stacksBeforeCurrentRound: null,
+      roundEndedAt: null,
+      awayAfterHandSeats: new Set(),
     });
 
     return this.toSummary(row.id);
@@ -390,6 +402,15 @@ export class TablesService implements OnModuleInit {
     return runtime.cardFlipRound !== null && runtime.cardFlipRound.phase !== "complete";
   }
 
+  /** Rejects a start attempt made before START_COOLDOWN_MS has passed since the previous hand/round settled — called by startHand/ClangService.startRound/CardFlipService.startRound right after their isRoundInProgress check, so the owner can't immediately re-press Start the instant results land. */
+  assertStartCooldownElapsed(runtime: RuntimeTable): void {
+    if (runtime.roundEndedAt === null) return;
+    const remainingMs = START_COOLDOWN_MS - (Date.now() - runtime.roundEndedAt);
+    if (remainingMs > 0) {
+      throw new BadRequestException(`Please wait ${Math.ceil(remainingMs / 1000)}s before starting the next hand`);
+    }
+  }
+
   private async clearSeat(runtime: RuntimeTable, seatIndex: number, userId: string): Promise<void> {
     const remainingStack = standPlayer(runtime.table, seatIndex);
     runtime.pendingStackAdjustments.delete(seatIndex);
@@ -436,6 +457,10 @@ export class TablesService implements OnModuleInit {
     }
 
     seat.status = away ? "sitting-out" : "active";
+    // Toggling the immediate away/back state supersedes any queued "away once
+    // this hand ends" — either it's redundant (already away) or contradictory
+    // (coming back), so don't leave it dangling to fire after some later hand.
+    runtime.awayAfterHandSeats.delete(seatIndex);
     await this.prisma.seat.update({
       where: { tableId_seatIndex: { tableId, seatIndex } },
       data: { status: away ? "sitting_out" : "active" },
@@ -445,6 +470,48 @@ export class TablesService implements OnModuleInit {
       await this.advanceHand(tableId, runtime);
     }
     this.emitChanged(tableId);
+  }
+
+  /**
+   * Queues this seat to go away once the CURRENTLY LIVE hand/round finishes,
+   * rather than immediately — lets a player finish out a hand they're
+   * already dealt into instead of auto-folding/checking through the rest of
+   * it (see `setSeatAway`). Doesn't touch `seat.status` or turn order at all
+   * right now; consumed by `applyAwayAfterRound` at the exact moment the
+   * hand/round actually settles. Passing `away: false` cancels a previously
+   * queued one (e.g. the player changed their mind before the hand ended).
+   */
+  async setSeatAwayAfterHand(tableId: string, seatIndex: number, requesterUserId: string, away: boolean): Promise<void> {
+    const runtime = this.getRuntimeTable(tableId);
+    const seat = runtime.table.seats[seatIndex];
+    if (!seat || !seat.playerId) throw new BadRequestException("Seat is not occupied");
+    if (requesterUserId !== runtime.ownerId && seat.playerId !== requesterUserId) {
+      throw new ForbiddenException("You can only set your own seat away");
+    }
+    if (away) runtime.awayAfterHandSeats.add(seatIndex);
+    else runtime.awayAfterHandSeats.delete(seatIndex);
+    this.emitChanged(tableId);
+  }
+
+  /**
+   * Consumes every seat queued via `setSeatAwayAfterHand` for the hand/round
+   * that just settled — flips them to sitting-out now that it's genuinely
+   * over. Called at the exact settlement points (poker's persistHandResult;
+   * Clang/Card Flip's settleIfComplete), never mid-hand, so this never
+   * touches live pot/turn-order math.
+   */
+  async applyAwayAfterRound(runtime: RuntimeTable): Promise<void> {
+    if (runtime.awayAfterHandSeats.size === 0) return;
+    for (const seatIndex of runtime.awayAfterHandSeats) {
+      const seat = runtime.table.seats[seatIndex];
+      if (!seat || !seat.playerId) continue;
+      seat.status = "sitting-out";
+      await this.prisma.seat.update({
+        where: { tableId_seatIndex: { tableId: runtime.tableId, seatIndex } },
+        data: { status: "sitting_out" },
+      });
+    }
+    runtime.awayAfterHandSeats.clear();
   }
 
   /**
@@ -516,6 +583,7 @@ export class TablesService implements OnModuleInit {
     if (this.isRoundInProgress(runtime)) {
       throw new BadRequestException("A hand or round is already in progress");
     }
+    this.assertStartCooldownElapsed(runtime);
 
     for (const [seatIndex, adjustment] of runtime.pendingStackAdjustments) {
       const seat = runtime.table.seats[seatIndex];
@@ -758,10 +826,37 @@ export class TablesService implements OnModuleInit {
     if (runtime.hand.bettingRound?.turnSeatIndex !== seatIndex) throw new ForbiddenException("It is not your turn");
 
     const engine = new DeclarativeEngine(runtime.gameDefinition);
-    engine.applyAction(runtime.table, runtime.hand, seatIndex, action);
+    await this.applyHandActionWithPacing(tableId, runtime, engine, seatIndex, action);
 
     await this.advanceHand(tableId, runtime);
     this.emitChanged(tableId);
+  }
+
+  /**
+   * Applies one hand action and, if it happened to close the betting round
+   * and deal a new community-card street, pauses on it — broadcasting that
+   * street by itself and holding for STREET_REVEAL_DELAY_MS before returning
+   * — instead of letting it appear bundled together with whatever happens
+   * next. Shared by the acting player's own action (applyAction) and every
+   * away seat's auto-play (advanceHand's loop below), so a street reveal
+   * gets the same beat no matter what triggered it.
+   */
+  private async applyHandActionWithPacing(
+    tableId: string,
+    runtime: RuntimeTable,
+    engine: DeclarativeEngine,
+    seatIndex: number,
+    action: PlayerAction
+  ): Promise<void> {
+    const hand = runtime.hand;
+    if (!hand) return;
+    const actionsBefore = hand.actions.length;
+    engine.applyAction(runtime.table, hand, seatIndex, action);
+    const dealtStreet = hand.actions.slice(actionsBefore).some((a) => a.type === "dealCommunityCards");
+    if (dealtStreet) {
+      this.emitChanged(tableId);
+      await delay(STREET_REVEAL_DELAY_MS);
+    }
   }
 
   /**
@@ -786,7 +881,18 @@ export class TablesService implements OnModuleInit {
     ) {
       const seatIndex = hand.bettingRound.turnSeatIndex;
       const legal = getLegalActions(runtime.table, hand, seatIndex);
-      engine.applyAction(runtime.table, hand, seatIndex, legal.canCheck ? { type: "check" } : { type: "fold" });
+      await this.applyHandActionWithPacing(tableId, runtime, engine, seatIndex, legal.canCheck ? { type: "check" } : { type: "fold" });
+    }
+
+    // All-in runout / deal-only streets: nothing gates the pace but the
+    // dealer's own hands, so reveal one street at a time with a real pause
+    // and a broadcast in between — instead of the engine (which no longer
+    // auto-recurses through these on its own, see `hasMoreDealing`) landing
+    // the whole rest of the board on everyone in one instant update.
+    while (engine.hasMoreDealing(hand)) {
+      engine.continueDealing(runtime.table, hand);
+      this.emitChanged(tableId);
+      await delay(STREET_REVEAL_DELAY_MS);
     }
 
     if (hand.phase === "showdown") {
@@ -798,6 +904,8 @@ export class TablesService implements OnModuleInit {
   private async persistHandResult(tableId: string, runtime: RuntimeTable, pots: PotResult[]): Promise<void> {
     const hand = runtime.hand;
     if (!hand || !runtime.gameDefinition) return;
+    runtime.roundEndedAt = Date.now();
+    await this.applyAwayAfterRound(runtime);
 
     const stacksBefore = new Map((runtime.stacksBeforeCurrentRound ?? []).map((s) => [s.seatIndex, s.stack]));
     runtime.stacksBeforeCurrentRound = null;

@@ -33,6 +33,7 @@ export class ClangService {
     if (this.tablesService.isRoundInProgress(runtime)) {
       throw new BadRequestException("A hand or round is already in progress");
     }
+    this.tablesService.assertStartCooldownElapsed(runtime);
 
     // Flush any stack corrections queued while the previous round was live, exactly like poker's startHand does.
     for (const [seatIndex, adjustment] of runtime.pendingStackAdjustments) {
@@ -211,6 +212,8 @@ export class ClangService {
     // another duplicate ClangRound row.
     if (!round || round.phase !== "complete" || round.settled) return;
     round.settled = true;
+    runtime.roundEndedAt = Date.now();
+    await this.tablesService.applyAwayAfterRound(runtime);
 
     const stacksBefore = new Map((runtime.stacksBeforeCurrentRound ?? []).map((s) => [s.seatIndex, s.stack]));
     runtime.stacksBeforeCurrentRound = null;

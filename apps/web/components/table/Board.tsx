@@ -1,6 +1,5 @@
 "use client";
 
-import { useState } from "react";
 import type { Card } from "@5lapnow/cards";
 import { PlayingCard } from "@/components/table/PlayingCard";
 import { cn } from "@/lib/cn";
@@ -12,6 +11,16 @@ export interface BoardProps {
   rabbitBoards: Card[][] | null;
   canRabbitHunt: boolean;
   onRevealRabbit: () => void;
+  /**
+   * Whether the board should currently render above overlapping seats.
+   * Controlled by the parent (not local state) because this div's actual
+   * z-index competition with seats happens one level up — the parent wrapper
+   * that positions this component also has its own `transform` (centering
+   * translate), which creates a new stacking context and would otherwise
+   * trap any z-index set here from ever being compared against a seat's.
+   */
+  raised: boolean;
+  onRaisedChange: (raised: boolean) => void;
 }
 
 function BoardRow({
@@ -57,19 +66,20 @@ function BoardRow({
  * exists), so hovering (desktop) or tapping (touch) this area brings it above
  * any seat currently covering it.
  */
-export function Board({ board, boards, rabbitBoard, rabbitBoards, canRabbitHunt, onRevealRabbit }: BoardProps) {
-  const [raised, setRaised] = useState(false);
-
+export function Board({ board, boards, rabbitBoard, rabbitBoards, canRabbitHunt, onRevealRabbit, raised, onRaisedChange }: BoardProps) {
   return (
     <div
-      className={cn("relative", raised ? "z-[25]" : "z-0")}
-      onMouseEnter={() => setRaised(true)}
-      onMouseLeave={() => setRaised(false)}
+      className={cn(
+        "relative rounded-xl border p-1.5 transition-colors sm:p-2",
+        raised ? "border-white/25 bg-black/50 shadow-xl" : "border-white/10 bg-black/20"
+      )}
+      onMouseEnter={() => onRaisedChange(true)}
+      onMouseLeave={() => onRaisedChange(false)}
       onPointerDown={(e) => {
         // Mirrors SeatView's raise pattern: mouse already gets hover above, so
         // only toggle here for touch/pen, which has no hover state.
         if (e.pointerType === "mouse") return;
-        setRaised((cur) => !cur);
+        onRaisedChange(!raised);
       }}
     >
       {boards ? (

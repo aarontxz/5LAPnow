@@ -21,6 +21,7 @@ export default function HandReplayPage({ params }: { params: Promise<{ id: strin
   const [error, setError] = useState<string | null>(null);
   const [stepIndex, setStepIndex] = useState(0);
   const [revealing, setRevealing] = useState(false);
+  const [boardRaised, setBoardRaised] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -141,7 +142,7 @@ export default function HandReplayPage({ params }: { params: Promise<{ id: strin
       </div>
 
       <div className="fixed left-1/2 top-1/2 aspect-[5/6] h-[78vh] w-auto max-w-[94vw] -translate-x-1/2 -translate-y-1/2 rounded-2xl border border-emerald-900/50 bg-gradient-to-b from-emerald-950 to-emerald-900 shadow-2xl">
-        <div className="absolute left-1/2 top-1/2 flex -translate-x-1/2 -translate-y-1/2 flex-col items-center gap-1 sm:gap-2">
+        <div className={`absolute left-1/2 top-1/2 flex -translate-x-1/2 -translate-y-1/2 flex-col items-center gap-1 sm:gap-2 ${boardRaised ? "z-30" : "z-0"}`}>
           <Board
             board={step.hand.board}
             boards={step.hand.boards}
@@ -149,6 +150,8 @@ export default function HandReplayPage({ params }: { params: Promise<{ id: strin
             rabbitBoards={step.hand.rabbitBoards}
             canRabbitHunt={canRevealRabbit && !revealing}
             onRevealRabbit={onRevealRabbit}
+            raised={boardRaised}
+            onRaisedChange={setBoardRaised}
           />
           <span className="rounded-full bg-black/40 px-3 py-1 text-xs text-white/70 sm:text-sm">
             Pot: <AnimatedNumber value={step.hand.pot} />
@@ -170,6 +173,7 @@ export default function HandReplayPage({ params }: { params: Promise<{ id: strin
             stack,
             status: "active",
             pendingStackAdjustment: null,
+            awayAfterHand: false,
           };
           // Only set on the final step (results is null everywhere else) — same
           // "first matching pot share" lookup live play uses, for consistency.

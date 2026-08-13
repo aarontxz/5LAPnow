@@ -15,6 +15,7 @@ export function NextGamePicker({
   onSelect,
   onStart,
   canStart,
+  canStartAt,
 }: {
   games: GameOption[];
   activeGameDefinitionId: string | undefined;
@@ -22,10 +23,24 @@ export function NextGamePicker({
   onStart: () => void;
   /** False before a 2nd player has joined — the game picker stays fully usable either way, only the Start button itself is disabled. */
   canStart: boolean;
+  /** Server-enforced cooldown: epoch ms before which Start would be rejected, or null once it's elapsed — a brief pause after the previous hand/round settles so Start isn't mashable the instant results land. */
+  canStartAt: number | null;
 }) {
   const [open, setOpen] = useState(false);
   const active = games.find((g) => g.id === activeGameDefinitionId);
   const activeName = active?.name ?? activeGameDefinitionId ?? "—";
+
+  // Ticks down locally once a second so the button's label/disabled state
+  // reflects the cooldown in real time, without re-rendering the whole page.
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (canStartAt === null || canStartAt <= Date.now()) return;
+    const interval = setInterval(() => setNow(Date.now()), 250);
+    return () => clearInterval(interval);
+  }, [canStartAt]);
+  const cooldownRemainingMs = canStartAt !== null ? Math.max(0, canStartAt - now) : 0;
+  const coolingDown = cooldownRemainingMs > 0;
+  const effectiveCanStart = canStart && !coolingDown;
 
   // Tapping/clicking anywhere outside this picker closes it — every dropdown/
   // modal in the app should behave this way (see CLAUDE.md).
@@ -72,14 +87,20 @@ export function NextGamePicker({
         {/* Start hand — main action; disabled (not hidden) before a 2nd player
             joins, so the game picker above stays reachable the whole time. */}
         <motion.button
-          whileTap={canStart ? { scale: 0.97 } : undefined}
+          whileTap={effectiveCanStart ? { scale: 0.97 } : undefined}
           onClick={onStart}
-          disabled={!canStart}
-          title={canStart ? undefined : "Waiting for a second player to join"}
+          disabled={!effectiveCanStart}
+          title={coolingDown ? "The next hand can start in a moment" : canStart ? undefined : "Waiting for a second player to join"}
           className="flex items-center justify-center gap-2 bg-emerald-600 px-6 py-3 text-sm font-semibold text-white transition-colors hover:bg-emerald-500 active:bg-emerald-700 disabled:cursor-not-allowed disabled:bg-emerald-800 disabled:text-white/40 disabled:hover:bg-emerald-800"
         >
-          <span className="text-base leading-none">▶</span>
-          Start hand
+          {coolingDown ? (
+            <span>Starting in {Math.ceil(cooldownRemainingMs / 1000)}s</span>
+          ) : (
+            <>
+              <span className="text-base leading-none">▶</span>
+              Start hand
+            </>
+          )}
         </motion.button>
       </div>
 

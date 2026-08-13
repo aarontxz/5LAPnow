@@ -72,5 +72,9 @@ export function GoogleSignInButton({ onCredential }: { onCredential: (idToken: s
 
   if (!process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID) return null;
 
-  return <div ref={containerRef} />;
+  // Google's renderButton iframe is a plain white rectangle that the pill
+  // graphic sits inside — on a dark page its square corners peek out past
+  // the pill's rounded ends unless something clips them. Match the "pill"
+  // shape/rounding passed to renderButton above so that white bleed is cropped away.
+  return <div ref={containerRef} className="overflow-hidden rounded-full" />;
 }

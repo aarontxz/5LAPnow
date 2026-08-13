@@ -168,10 +168,29 @@ export class DeclarativeEngine {
         startBettingRound(hand, firstActor, bigBlind, 0);
       }
     } else {
-      // All-in runout or a street with no betting: keep dealing until showdown.
+      // All-in runout or a deal-only street: stop here instead of dealing every
+      // remaining street in one uninterrupted burst — see `hasMoreDealing` /
+      // `continueDealing`, which let the caller pace the reveal (e.g. a brief
+      // pause per street) since there's no player input gating the pace here.
       hand.bettingRound = null;
-      this.dealAndMaybeStartRound(table, hand);
     }
+  }
+
+  /**
+   * True once dealing has paused mid-runout — a street was just dealt with
+   * nothing left for anyone to decide (all-in, or a deal-only street), but
+   * the hand hasn't reached showdown yet. Only ever true right after
+   * `initHand`/`applyAction`/`continueDealing` returns; never true while
+   * waiting on a real player decision. Callers should call `continueDealing`
+   * again — ideally after a short pause — until this goes false.
+   */
+  hasMoreDealing(hand: HandState): boolean {
+    return hand.phase === "betting" && hand.bettingRound === null;
+  }
+
+  /** Deals exactly the next street (see `hasMoreDealing`). Call in a loop until `hasMoreDealing` returns false. */
+  continueDealing(table: TableState, hand: HandState): void {
+    this.dealAndMaybeStartRound(table, hand);
   }
 
   /** Cards still needed for every future street's guaranteed community-card deal (burn + per-board cards), so redraw never eats into supply community dealing depends on. */

@@ -8,6 +8,7 @@ import { saveSession, type Session } from "@/lib/session";
 import { api } from "@/lib/api";
 import { useTableSocket } from "@/lib/useTableSocket";
 import { SeatView } from "@/components/table/SeatView";
+import { AwayButton } from "@/components/table/AwayButton";
 import { ClangActionPanel } from "@/components/table/clang/ClangActionPanel";
 import { CardFlipActionPanel } from "@/components/table/cardflip/CardFlipActionPanel";
 import { PlayingCard } from "@/components/table/PlayingCard";
@@ -55,6 +56,38 @@ export default function TablePage({ params }: { params: Promise<{ id: string }> 
   // this has to live here and drive that wrapper's z-index rather than anything
   // inside SeatView.
   const [raisedSeatIndex, setRaisedSeatIndex] = useState<number | null>(null);
+  // Mirrors raisedSeatIndex, but for the community board — see Board.tsx's
+  // `raised` prop doc for why this has to be lifted up here rather than kept
+  // as Board's own local state.
+  const [boardRaised, setBoardRaised] = useState(false);
+  // The viewer's own seat (always rendered at relative index 0, near the
+  // felt's bottom edge) can grow taller than its neighbors — e.g. ESG's
+  // 3-row card fan plus its 3-line hand-strength readout — tall enough that
+  // its bottom would render past the felt's own bottom edge. Measure both
+  // elements and, only when that would actually happen, nudge just this
+  // seat upward by exactly the overflow amount so it stays fully in bounds;
+  // other seats are never shifted.
+  const [feltEl, setFeltEl] = useState<HTMLDivElement | null>(null);
+  const [ownSeatEl, setOwnSeatEl] = useState<HTMLDivElement | null>(null);
+  const [ownSeatShiftPx, setOwnSeatShiftPx] = useState(0);
+  useEffect(() => {
+    if (!feltEl || !ownSeatEl) {
+      setOwnSeatShiftPx(0);
+      return;
+    }
+    const recompute = () => {
+      const feltHeight = feltEl.offsetHeight;
+      const seatHeight = ownSeatEl.offsetHeight;
+      const topPercent = parseFloat(seatPosition(0).top);
+      const naturalBottomPx = (topPercent / 100) * feltHeight + seatHeight / 2;
+      setOwnSeatShiftPx(Math.max(0, naturalBottomPx - feltHeight));
+    };
+    recompute();
+    const observer = new ResizeObserver(recompute);
+    observer.observe(feltEl);
+    observer.observe(ownSeatEl);
+    return () => observer.disconnect();
+  }, [feltEl, ownSeatEl]);
   const {
     snapshot,
     error,
@@ -67,6 +100,7 @@ export default function TablePage({ params }: { params: Promise<{ id: string }> 
     adjustStack,
     removePlayer,
     setSeatAway,
+    setSeatAwayAfterHand,
     transferOwnership,
     startHand,
     setNextGame,
@@ -312,16 +346,13 @@ export default function TablePage({ params }: { params: Promise<{ id: string }> 
           </button>
         )}
         {mySeat && !isOwner && (
-          <button
-            onClick={() => setSeatAway(mySeatIndex!, mySeat.status !== "sitting-out")}
-            className={`rounded-full border px-3 py-1.5 text-xs font-medium transition-colors ${
-              mySeat.status === "sitting-out"
-                ? "border-amber-400/50 bg-amber-400/10 text-amber-300 hover:bg-amber-400/20"
-                : "border-white/10 bg-white/5 text-white/50 hover:border-white/20 hover:text-white/80"
-            }`}
-          >
-            {mySeat.status === "sitting-out" ? "Back" : "Away"}
-          </button>
+          <AwayButton
+            sittingOut={mySeat.status === "sitting-out"}
+            awayAfterHand={mySeat.awayAfterHand}
+            roundActive={anyRoundActive}
+            onSetAway={(away) => setSeatAway(mySeatIndex!, away)}
+            onSetAwayAfterHand={(away) => setSeatAwayAfterHand(mySeatIndex!, away)}
+          />
         )}
       </>
     );
@@ -347,6 +378,7 @@ export default function TablePage({ params }: { params: Promise<{ id: string }> 
               onSelect={setNextGame}
               onStart={startHand}
               canStart={activeSeats >= 2}
+              canStartAt={snapshot?.canStartAt ?? null}
             />
           </motion.div>
         )}
@@ -481,11 +513,17 @@ export default function TablePage({ params }: { params: Promise<{ id: string }> 
           never has this problem (that panel is just a small corner card
           there), so sm+ always reverts to true centering. */}
       <div
+        ref={setFeltEl}
         className={`fixed left-1/2 aspect-[5/7] w-auto max-w-[94vw] -translate-x-1/2 rounded-2xl border border-emerald-900/50 bg-gradient-to-b from-emerald-950 to-emerald-900 shadow-2xl sm:left-1/2 sm:top-1/2 sm:aspect-[5/6] sm:h-[80vh] sm:max-w-[90vw] sm:-translate-y-1/2 sm:bottom-auto ${
           isClang || isCardFlip ? `top-14 ${FIXED_ACTION_BAR_RESERVE_CLASS}` : "top-1/2 h-[78vh] -translate-y-1/2"
         }`}
       >
-          <div className="absolute left-1/2 top-1/2 flex -translate-x-1/2 -translate-y-1/2 flex-col items-center gap-1 sm:gap-2">
+          <div
+            className={cn(
+              "absolute left-1/2 top-1/2 flex -translate-x-1/2 -translate-y-1/2 flex-col items-center gap-1 sm:gap-2",
+              boardRaised ? "z-30" : "z-0"
+            )}
+          >
             {isClang ? (
               <>
                 <div className="flex flex-col items-center gap-0.5">
@@ -602,6 +640,8 @@ export default function TablePage({ params }: { params: Promise<{ id: string }> 
                 rabbitBoards={rabbitBoards}
                 canRabbitHunt={canRabbitHunt}
                 onRevealRabbit={revealRabbit}
+                raised={boardRaised}
+                onRaisedChange={setBoardRaised}
               />
             )}
             {!isClang && !isCardFlip && (

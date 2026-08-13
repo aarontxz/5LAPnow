@@ -81,7 +81,14 @@ export interface RuntimeTable {
    * Null whenever no hand/round is in flight.
    */
   stacksBeforeCurrentRound: Array<{ seatIndex: number; userId: string; stack: number }> | null;
+  /** `Date.now()` of the moment the most recently finished hand/round settled (poker: persistHandResult; Clang/Card Flip: settleIfComplete) — null until the table's first hand/round ever completes. Used only to enforce START_COOLDOWN_MS before the owner can start the next one. */
+  roundEndedAt: number | null;
+  /** Seats queued via TablesService.setSeatAwayAfterHand — consumed (flipped to sitting-out, then cleared) by TablesService.applyAwayAfterRound at the exact moment the live hand/round settles. */
+  awayAfterHandSeats: Set<number>;
 }
+
+/** Cooldown after a hand/round completes before the owner can start the next one — see TablesService.assertStartCooldownElapsed. */
+export const START_COOLDOWN_MS = 3000;
 
 /** Captures every active, occupied seat's current stack — call right before forced bets/stakes are posted for a new hand/round. */
 export function captureStacksBefore(table: TableState): Array<{ seatIndex: number; userId: string; stack: number }> {
@@ -297,6 +304,7 @@ export function buildTableSnapshot(runtime: RuntimeTable, viewerUserId: string |
       stack: s.stack,
       status: s.status,
       pendingStackAdjustment: pending && pending.userId === s.playerId ? resolvePendingStackAdjustment(s.stack, pending) : null,
+      awayAfterHand: runtime.awayAfterHandSeats.has(s.seatIndex),
     };
   });
 
@@ -389,5 +397,6 @@ export function buildTableSnapshot(runtime: RuntimeTable, viewerUserId: string |
     clangLastStake: runtime.clangLastStake,
     clangLastEatPaymentPerCard: runtime.clangLastEatPaymentPerCard,
     cardFlipRound,
+    canStartAt: runtime.roundEndedAt === null ? null : runtime.roundEndedAt + START_COOLDOWN_MS,
   };
 }

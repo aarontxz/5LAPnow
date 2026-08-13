@@ -182,6 +182,15 @@ export class TablesGateway implements OnGatewayInit, OnModuleInit {
     });
   }
 
+  @SubscribeMessage("seat:setAwayAfterHand")
+  async onSetAwayAfterHand(@ConnectedSocket() socket: AppSocket, @MessageBody() payload: SeatAwayPayload): Promise<void> {
+    // Purely queues state for later — never touches turn order right now — so
+    // unlike seat:setAway there's nothing here to advance immediately.
+    await this.guard(socket, payload.tableId, () =>
+      this.tablesService.setSeatAwayAfterHand(payload.tableId, payload.seatIndex, socket.data.userId, payload.away)
+    );
+  }
+
   @SubscribeMessage("table:transferOwnership")
   async onTransferOwnership(@ConnectedSocket() socket: AppSocket, @MessageBody() payload: SeatIndexPayload): Promise<void> {
     await this.guard(socket, payload.tableId, () => this.tablesService.transferOwnership(payload.tableId, payload.seatIndex, socket.data.userId));
