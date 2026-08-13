@@ -14,6 +14,15 @@ export interface HandPlayerState {
   hasActedThisRound: boolean;
   /** Player chose to voluntarily reveal their hole cards after the hand completed, even though they weren't required to. */
   shown: boolean;
+  /**
+   * Snapshot of this player's hole cards at the moment they folded, taken
+   * only when `reshuffleFoldedCardsIntoDeck` clears `holeCards` back to `[]`
+   * for real-time dealing purposes (e.g. ESG). For every other game, folded
+   * `holeCards` are never cleared, so this stays null and callers should just
+   * read `holeCards` directly — history-persistence code should prefer this
+   * field when set, falling back to `holeCards` otherwise.
+   */
+  foldedHoleCards: Card[] | null;
 }
 
 export interface BettingRoundState {
@@ -35,6 +44,8 @@ export interface PotShare {
   description?: string;
   /** Which board (0-indexed) this share was won on — only set for multi-board (double/triple board bomb pot) hands. */
   boardIndex?: number;
+  /** Total point-race score (out of the number of scoring categories) this share was won with — only set under `scoring: "point-race"`. */
+  points?: number;
 }
 
 export interface PotResult {
@@ -55,13 +66,39 @@ export interface ShowdownResult {
 /** `"post"` covers antes/blinds; the rest mirror `PlayerAction["type"]` from bettingRound.ts. */
 export type HandActionType = "post" | "fold" | "check" | "call" | "bet" | "raise";
 
-export interface HandActionLogEntry {
+export interface BettingActionLogEntry {
   streetName: string;
   seatIndex: number;
   type: HandActionType;
   /** Chips committed by this action, or null for actions with no chip amount (fold/check). */
   amount: number | null;
 }
+
+/** Community cards dealt this street — full identities logged, since board cards are always public. */
+export interface DealCommunityCardsLogEntry {
+  streetName: string;
+  type: "dealCommunityCards";
+  boardIndex: number;
+  cards: Card[];
+}
+
+/** Initial hole cards dealt at the start of a hand — count only, never identities: a live spectator never learns a hole card until it's revealed as part of a seat's final hand at showdown, never per-card as it's dealt. */
+export interface DealHoleCardsLogEntry {
+  streetName: string;
+  type: "dealHoleCards";
+  seatIndex: number;
+  count: number;
+}
+
+/** Mid-street hole-card top-up (draw-style variants, e.g. ESG) — count only, same reasoning as DealHoleCardsLogEntry. */
+export interface RedrawLogEntry {
+  streetName: string;
+  type: "redraw";
+  seatIndex: number;
+  count: number;
+}
+
+export type HandActionLogEntry = BettingActionLogEntry | DealCommunityCardsLogEntry | DealHoleCardsLogEntry | RedrawLogEntry;
 
 export interface HandState {
   gameDefinition: GameDefinition;
@@ -91,6 +128,27 @@ export interface HandState {
 export function currentStreetName(hand: HandState): string {
   const street = hand.gameDefinition.streets[Math.max(hand.streetIndex, 0)];
   return street?.name ?? `street-${hand.streetIndex}`;
+}
+
+/**
+ * How many of each seat's hole cards came from the most recent deal/redraw
+ * event — walks backward from the end of `actions` while the entries are
+ * `dealHoleCards`/`redraw`, summing per seat, and stops at the first action
+ * that isn't one of those (so it's naturally empty once any betting action
+ * has happened since). Mirrors ClangEngine's "was the last action my draw?"
+ * pattern, generalized to cover a redraw event that deals several seats —
+ * and several cards each — in one go. Pass a prefix of `actions` (e.g. up to
+ * a specific replay step) to get the answer as of that point in time instead
+ * of "right now".
+ */
+export function recentlyDealtCounts(actions: HandActionLogEntry[]): Map<number, number> {
+  const counts = new Map<number, number>();
+  for (let i = actions.length - 1; i >= 0; i--) {
+    const action = actions[i] as HandActionLogEntry;
+    if (action.type !== "dealHoleCards" && action.type !== "redraw") break;
+    counts.set(action.seatIndex, (counts.get(action.seatIndex) ?? 0) + action.count);
+  }
+  return counts;
 }
 
 export function orderSeatsFromButton(seats: Seat[], buttonSeatIndex: number): number[] {

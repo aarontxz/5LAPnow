@@ -1,4 +1,12 @@
-import { evaluateBestHand, evaluateQualifyingLow, compareEvaluatedHands, describeEvaluatedHand, Card } from "@5lapnow/cards";
+import {
+  evaluateBestHand,
+  evaluateBestHandExact,
+  evaluateQualifyingLow,
+  compareEvaluatedHands,
+  describeEvaluatedHand,
+  Card,
+  EvaluatedHand,
+} from "@5lapnow/cards";
 import { TableState } from "./table.js";
 import { HandState, PotResult, PotShare, ShowdownResult } from "./handState.js";
 
@@ -91,6 +99,44 @@ export function settleShowdown(table: TableState, hand: HandState): ShowdownResu
         pot.hiWinners = withDescription(splitAmountEvenly(hiHalf, hiWinnerSeats, pot.eligibleSeats), hiDescription);
         pot.loWinners = withDescription(splitAmountEvenly(potHalf, loWinnerSeats, pot.eligibleSeats), loDescription);
       }
+    } else if (hand.gameDefinition.handRanking.scoring === "point-race") {
+      // Each board (plus an optional hole-cards-only category) is worth 1 point,
+      // split evenly among that category's tied winners; whoever has the
+      // highest total points takes the *entire* pot (ties split the pot
+      // evenly). Point totals are tracked as integer units (not floats) so
+      // that e.g. three 1/3-splits sum to exactly a whole point.
+      const exactHoleCardsUsed = hand.gameDefinition.handRanking.exactHoleCardsUsed;
+      const numBoards = hand.boards.length;
+      const POINT_SCALE = 2520; // lcm(1..10) — exact for any tie-group size up to the schema's 10-player max
+
+      const pointUnits = new Map<number, number>(pot.eligibleSeats.map((s) => [s, 0]));
+      const awardCategory = (evalFor: (seatIndex: number) => EvaluatedHand): void => {
+        const evals = pot.eligibleSeats.map((s) => ({ seatIndex: s, hand: evalFor(s) }));
+        const best = evals.reduce((a, b) => (compareEvaluatedHands(b.hand, a.hand, mode) > 0 ? b : a));
+        const winners = evals.filter((e) => compareEvaluatedHands(e.hand, best.hand, mode) === 0).map((e) => e.seatIndex);
+        const share = Math.floor(POINT_SCALE / winners.length);
+        for (const seatIndex of winners) pointUnits.set(seatIndex, (pointUnits.get(seatIndex) as number) + share);
+      };
+
+      for (let bi = 0; bi < numBoards; bi++) {
+        const boardCards = hand.boards[bi] ?? [];
+        awardCategory((s) => {
+          const holeCards = hand.players.get(s)?.holeCards ?? [];
+          return exactHoleCardsUsed !== undefined
+            ? evaluateBestHandExact(holeCards, boardCards, exactHoleCardsUsed, mode)
+            : evaluateBestHand([...holeCards, ...boardCards], mode);
+        });
+      }
+      if (hand.gameDefinition.handRanking.includeHandOnlyCategory) {
+        awardCategory((s) => evaluateBestHand(hand.players.get(s)?.holeCards ?? [], mode));
+      }
+
+      const maxUnits = Math.max(...pointUnits.values());
+      const winnerSeats = [...pointUnits.entries()].filter(([, units]) => units === maxUnits).map(([s]) => s);
+      pot.hiWinners = withDescription(
+        splitAmountEvenly(pot.amount, winnerSeats, pot.eligibleSeats),
+        `${(maxUnits / POINT_SCALE).toFixed(2)} points`
+      ).map((s) => ({ ...s, points: maxUnits / POINT_SCALE }));
     } else if (hand.boards.length > 1) {
       // Split pot equally across boards; each board share goes to that board's best hand.
       const numBoards = hand.boards.length;

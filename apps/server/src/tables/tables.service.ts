@@ -1,11 +1,15 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException, OnModuleInit } from "@nestjs/common";
 import { randomUUID } from "node:crypto";
 import {
+  computeRabbitReveal,
   createEmptyTable,
   DeclarativeEngine,
+  GameDefinition,
   getLegalActions,
+  HandActionLogEntry,
   PlayerAction,
   PotResult,
+  RabbitReveal,
   seatPlayer,
   standPlayer,
   TableConfig,
@@ -13,11 +17,15 @@ import {
 import type { Card } from "@5lapnow/cards";
 import type {
   CardFlipRoundLogEntry,
+  CardFlipRoundReplayResponse,
   ChatMessageView,
   ClangRoundLogEntry,
+  ClangRoundReplayResponse,
   CreateTableRequest,
   EffectiveGameConfig,
   HandLogEntry,
+  HandLogPlayer,
+  HandReplayResponse,
   PlayerLedgerEntry,
   SetGameConfigPayload,
   TableGameConfigOverrides,
@@ -26,7 +34,17 @@ import type {
 } from "@5lapnow/shared-types";
 import { PrismaService } from "../prisma/prisma.service";
 import { GamesService } from "../games/games.service";
-import { RuntimeTable, buildTableSnapshot, NextGameOverride, resolvePendingStackAdjustment } from "./table-snapshot";
+import {
+  RuntimeTable,
+  buildTableSnapshot,
+  NextGameOverride,
+  resolvePendingStackAdjustment,
+  captureStacksBefore,
+  mustShowSeatsFromResults,
+} from "./table-snapshot";
+import { buildPokerReplay } from "./replay/poker-replay";
+import { buildClangReplay, ClangRoundReplayRow } from "./replay/clang-replay";
+import { buildCardFlipReplay, CardFlipRoundReplayRow } from "./replay/cardflip-replay";
 
 type TableChangeListener = (tableId: string) => void;
 
@@ -34,6 +52,8 @@ type TableChangeListener = (tableId: string) => void;
 export class TablesService implements OnModuleInit {
   private readonly runtimeTables = new Map<string, RuntimeTable>();
   private readonly listeners = new Set<TableChangeListener>();
+  /** Tail of the in-flight chain of table-scoped operations, keyed by tableId — see `withTableLock`. */
+  private readonly tableLocks = new Map<string, Promise<unknown>>();
 
   constructor(
     private readonly prisma: PrismaService,
@@ -122,6 +142,7 @@ export class TablesService implements OnModuleInit {
         pendingStackAdjustments: new Map(),
         nextGameOverride: null,
         gameConfigOverrides: (row.gameConfigOverrides as TableGameConfigOverrides | null) ?? {},
+        stacksBeforeCurrentRound: null,
       });
     }
   }
@@ -187,6 +208,7 @@ export class TablesService implements OnModuleInit {
       pendingStackAdjustments: new Map(),
       nextGameOverride: null,
       gameConfigOverrides: {},
+      stacksBeforeCurrentRound: null,
     });
 
     return this.toSummary(row.id);
@@ -215,6 +237,28 @@ export class TablesService implements OnModuleInit {
     const runtime = this.runtimeTables.get(tableId);
     if (!runtime) throw new NotFoundException(`Table ${tableId} not found (or the server restarted since it was created)`);
     return runtime;
+  }
+
+  /**
+   * Runs `fn` after every previously-queued operation for this table has
+   * finished, and before any later one starts — a strict single-file line per
+   * table. Every mutating gateway action funnels through this (see
+   * TablesGateway.guard), which is what actually enforces it: without it,
+   * two concurrent requests for the same table (e.g. a player's real move
+   * landing while another player's "away" toggle is mid-flight through its
+   * own multi-step settlement/sync work) could interleave their reads and
+   * writes of the same in-memory `RuntimeTable` and DB rows, corrupting stack
+   * values with no trace in any log — exactly how a stray chip discrepancy
+   * happened in production.
+   */
+  async withTableLock<T>(tableId: string, fn: () => Promise<T>): Promise<T> {
+    const tail = this.tableLocks.get(tableId) ?? Promise.resolve();
+    const result = tail.then(fn, fn);
+    this.tableLocks.set(tableId, result.then(
+      () => undefined,
+      () => undefined
+    ));
+    return result;
   }
 
   getSnapshot(tableId: string, viewerUserId: string | null) {
@@ -503,6 +547,10 @@ export class TablesService implements OnModuleInit {
       await this.prisma.table.update({ where: { id: tableId }, data: { gameDefinitionId: gameDefinition.id } });
     }
 
+    // Must snapshot before initHand posts antes/blinds — this is what persistHandResult
+    // reads back as each seat's stackBefore.
+    runtime.stacksBeforeCurrentRound = captureStacksBefore(runtime.table);
+
     const engine = new DeclarativeEngine(gameDefinition);
     runtime.gameCounter += 1;
     runtime.hand = engine.initHand(runtime.table, runtime.gameCounter);
@@ -643,32 +691,31 @@ export class TablesService implements OnModuleInit {
     if (!seat) throw new ForbiddenException("Only seated players can reveal rabbit cards");
     if (hand.rabbitRevealedSeats.has(seat.seatIndex)) return; // already revealed for this player
 
-    const remainingStreets = hand.gameDefinition.streets
-      .slice(hand.streetIndex + 1)
-      .filter((s) => s.dealCommunityCards > 0);
-    if (remainingStreets.length === 0) return; // all community cards were already dealt
-
-    if (hand.rabbitBoard === null) {
-      const numBoards = hand.boards.length;
-      if (numBoards > 1) {
-        const rabbitBoards: Card[][] = hand.boards.map(() => []);
-        for (const street of remainingStreets) {
-          hand.deck.burn();
-          for (const board of rabbitBoards) board.push(...hand.deck.draw(street.dealCommunityCards));
-        }
-        hand.rabbitBoards = rabbitBoards;
-        hand.rabbitBoard = rabbitBoards.flat();
-      } else {
-        const rabbitBoard: Card[] = [];
-        for (const street of remainingStreets) {
-          hand.deck.burn();
-          rabbitBoard.push(...hand.deck.draw(street.dealCommunityCards));
-        }
-        hand.rabbitBoard = rabbitBoard;
-        hand.rabbitBoards = null;
-      }
+    const alreadyComputed = hand.rabbitBoard !== null;
+    if (!alreadyComputed) {
+      const { rabbitBoard, rabbitBoards } = computeRabbitReveal(
+        hand.gameDefinition,
+        hand.streetIndex,
+        hand.boards.length,
+        hand.deck.peekRemaining()
+      );
+      if (rabbitBoard.length === 0) return; // all community cards were already dealt
+      hand.rabbitBoard = rabbitBoard;
+      hand.rabbitBoards = rabbitBoards;
     }
     hand.rabbitRevealedSeats.add(seat.seatIndex);
+
+    if (!alreadyComputed) {
+      // Persist once, the first time anyone reveals it — so a later replay doesn't
+      // need to recompute it from `remainingDeck` (though it still could).
+      await this.prisma.hand.updateMany({
+        where: { tableId, handNumber: hand.handNumber },
+        data: {
+          rabbitBoard: JSON.parse(JSON.stringify(hand.rabbitBoard)),
+          rabbitBoards: hand.rabbitBoards ? JSON.parse(JSON.stringify(hand.rabbitBoards)) : undefined,
+        },
+      });
+    }
     this.emitChanged(tableId);
   }
 
@@ -689,6 +736,17 @@ export class TablesService implements OnModuleInit {
     if (!player) throw new BadRequestException("You were not dealt into this hand");
     if (player.shown) return; // already shown
     player.shown = true;
+
+    // Patch the already-persisted row's `players` array so replay's read-time
+    // redaction treats this seat as revealed too, not just the live viewer.
+    const row = await this.prisma.hand.findUnique({ where: { tableId_handNumber: { tableId, handNumber: hand.handNumber } } });
+    if (row) {
+      const players = (row.players as Array<{ seatIndex: number; shown: boolean }>).map((p) =>
+        p.seatIndex === seat.seatIndex ? { ...p, shown: true } : p
+      );
+      await this.prisma.hand.update({ where: { id: row.id }, data: { players } });
+    }
+
     this.emitChanged(tableId);
   }
 
@@ -741,6 +799,9 @@ export class TablesService implements OnModuleInit {
     const hand = runtime.hand;
     if (!hand || !runtime.gameDefinition) return;
 
+    const stacksBefore = new Map((runtime.stacksBeforeCurrentRound ?? []).map((s) => [s.seatIndex, s.stack]));
+    runtime.stacksBeforeCurrentRound = null;
+
     const players = [...hand.players.entries()].map(([seatIndex, handPlayer]) => {
       const seat = runtime.table.seats[seatIndex];
       return {
@@ -748,6 +809,16 @@ export class TablesService implements OnModuleInit {
         userId: seat?.playerId ?? null,
         displayName: seat?.displayName ?? null,
         totalContributed: handPlayer.totalContributed,
+        stackBefore: stacksBefore.get(seatIndex) ?? null,
+        stackAfter: seat?.stack ?? null,
+        // Persisted for every seat unconditionally — visibility is enforced when a hand is
+        // served for replay (only the owning viewer, or a seat that was actually revealed,
+        // ever gets this back), never at write time. `foldedHoleCards` covers the one case
+        // (ESG's reshuffle-on-fold) where `holeCards` itself gets cleared mid-hand.
+        holeCards: handPlayer.foldedHoleCards ?? handPlayer.holeCards,
+        // Always false here — a voluntary reveal only ever happens after the hand is
+        // already complete and persisted; showCards() patches this field in afterward.
+        shown: false,
       };
     });
 
@@ -761,6 +832,7 @@ export class TablesService implements OnModuleInit {
         results: JSON.parse(JSON.stringify(pots)),
         players: JSON.parse(JSON.stringify(players)),
         actions: JSON.parse(JSON.stringify(hand.actions)),
+        remainingDeck: JSON.parse(JSON.stringify(hand.deck.peekRemaining())),
       },
     });
 
@@ -784,7 +856,7 @@ export class TablesService implements OnModuleInit {
     }
   }
 
-  async getLedger(tableId: string): Promise<TableLedgerResponse> {
+  async getLedger(tableId: string, viewerUserId: string): Promise<TableLedgerResponse> {
     const runtime = this.getRuntimeTable(tableId);
 
     const [hands, clangRounds, cardFlipRounds, transactions] = await Promise.all([
@@ -817,16 +889,24 @@ export class TablesService implements OnModuleInit {
     });
 
     return {
-      hands: hands.map((h) => ({
-        handNumber: h.handNumber,
-        gameName: h.gameDefinition.name,
-        board: h.board as unknown as HandLogEntry["board"],
-        boards: (h.boards as unknown as HandLogEntry["boards"]) ?? null,
-        results: h.results as unknown as HandLogEntry["results"],
-        players: h.players as unknown as HandLogEntry["players"],
-        actions: h.actions as unknown as HandLogEntry["actions"],
-        playedAt: h.playedAt.toISOString(),
-      })),
+      hands: hands.map((h) => {
+        const results = h.results as unknown as HandLogEntry["results"];
+        const mustShow = mustShowSeatsFromResults(results);
+        const players = (h.players as unknown as HandLogPlayer[]).map((p) => ({
+          ...p,
+          holeCards: p.userId === viewerUserId || mustShow.has(p.seatIndex) || p.shown ? p.holeCards : null,
+        }));
+        return {
+          handNumber: h.handNumber,
+          gameName: h.gameDefinition.name,
+          board: h.board as unknown as HandLogEntry["board"],
+          boards: (h.boards as unknown as HandLogEntry["boards"]) ?? null,
+          results,
+          players,
+          actions: h.actions as unknown as HandLogEntry["actions"],
+          playedAt: h.playedAt.toISOString(),
+        };
+      }),
       clangRounds: clangRounds.map((r) => ({
         roundNumber: r.roundNumber,
         stake: r.stake,
@@ -848,6 +928,151 @@ export class TablesService implements OnModuleInit {
       })),
       players,
     };
+  }
+
+  async getHandReplay(tableId: string, handNumber: number, viewerUserId: string | null): Promise<HandReplayResponse> {
+    const row = await this.prisma.hand.findUnique({
+      where: { tableId_handNumber: { tableId, handNumber } },
+      include: { gameDefinition: true },
+    });
+    if (!row) throw new NotFoundException(`Hand ${handNumber} not found for table ${tableId}`);
+    const [previous, next] = await Promise.all([
+      this.prisma.hand.findFirst({ where: { tableId, handNumber: { lt: handNumber } }, orderBy: { handNumber: "desc" }, select: { handNumber: true } }),
+      this.prisma.hand.findFirst({ where: { tableId, handNumber: { gt: handNumber } }, orderBy: { handNumber: "asc" }, select: { handNumber: true } }),
+    ]);
+    const gameDefinition = await this.gamesService.getDefinition(row.gameDefinitionId);
+    const players = row.players as unknown as HandLogPlayer[];
+    const steps = buildPokerReplay(
+      {
+        handNumber: row.handNumber,
+        gameName: row.gameDefinition.name,
+        board: row.board as unknown as Card[],
+        boards: (row.boards as unknown as Card[][] | null) ?? null,
+        results: row.results as unknown as PotResult[],
+        players,
+        actions: row.actions as unknown as HandActionLogEntry[],
+        remainingDeck: row.remainingDeck as unknown as Card[],
+        rabbitBoard: (row.rabbitBoard as unknown as Card[] | null) ?? null,
+        rabbitBoards: (row.rabbitBoards as unknown as Card[][] | null) ?? null,
+      },
+      gameDefinition,
+      viewerUserId
+    );
+    return {
+      handNumber: row.handNumber,
+      gameName: row.gameDefinition.name,
+      players: players.map((p) => ({ seatIndex: p.seatIndex, userId: p.userId, displayName: p.displayName, stackBefore: p.stackBefore, stackAfter: p.stackAfter })),
+      steps,
+      previousHandNumber: previous?.handNumber ?? null,
+      nextHandNumber: next?.handNumber ?? null,
+    };
+  }
+
+  async getClangRoundReplay(tableId: string, roundNumber: number): Promise<ClangRoundReplayResponse> {
+    const row = await this.prisma.clangRound.findUnique({ where: { tableId_roundNumber: { tableId, roundNumber } } });
+    if (!row) throw new NotFoundException(`Clang round ${roundNumber} not found for table ${tableId}`);
+    const [previous, next] = await Promise.all([
+      this.prisma.clangRound.findFirst({
+        where: { tableId, roundNumber: { lt: roundNumber } },
+        orderBy: { roundNumber: "desc" },
+        select: { roundNumber: true },
+      }),
+      this.prisma.clangRound.findFirst({
+        where: { tableId, roundNumber: { gt: roundNumber } },
+        orderBy: { roundNumber: "asc" },
+        select: { roundNumber: true },
+      }),
+    ]);
+    const players = row.players as unknown as ClangRoundReplayRow["players"];
+    const steps = buildClangReplay({
+      roundNumber: row.roundNumber,
+      stake: row.stake,
+      eatPaymentPerCard: row.eatPaymentPerCard,
+      outcome: row.outcome as unknown as ClangRoundReplayRow["outcome"],
+      bonusHits: row.bonusHits as unknown as ClangRoundReplayRow["bonusHits"],
+      players,
+      actions: row.actions as unknown as ClangRoundReplayRow["actions"],
+    });
+    return {
+      roundNumber: row.roundNumber,
+      players: players.map((p) => ({ seatIndex: p.seatIndex, userId: p.userId, displayName: p.displayName, stackBefore: p.stackBefore, stackAfter: p.stackAfter })),
+      steps,
+      previousRoundNumber: previous?.roundNumber ?? null,
+      nextRoundNumber: next?.roundNumber ?? null,
+    };
+  }
+
+  async getCardFlipRoundReplay(tableId: string, roundNumber: number): Promise<CardFlipRoundReplayResponse> {
+    const row = await this.prisma.cardFlipRound.findUnique({ where: { tableId_roundNumber: { tableId, roundNumber } } });
+    if (!row) throw new NotFoundException(`Card Flip round ${roundNumber} not found for table ${tableId}`);
+    const [previous, next] = await Promise.all([
+      this.prisma.cardFlipRound.findFirst({
+        where: { tableId, roundNumber: { lt: roundNumber } },
+        orderBy: { roundNumber: "desc" },
+        select: { roundNumber: true },
+      }),
+      this.prisma.cardFlipRound.findFirst({
+        where: { tableId, roundNumber: { gt: roundNumber } },
+        orderBy: { roundNumber: "asc" },
+        select: { roundNumber: true },
+      }),
+    ]);
+    const players = row.players as unknown as CardFlipRoundReplayRow["players"];
+    const steps = buildCardFlipReplay({
+      roundNumber: row.roundNumber,
+      stake: row.stake,
+      cardsPerPlayer: row.cardsPerPlayer,
+      outcome: row.outcome as unknown as CardFlipRoundReplayRow["outcome"],
+      players,
+      actions: row.actions as unknown as CardFlipRoundReplayRow["actions"],
+    });
+    return {
+      roundNumber: row.roundNumber,
+      players: players.map((p) => ({ seatIndex: p.seatIndex, userId: p.userId, displayName: p.displayName, stackBefore: p.stackBefore, stackAfter: p.stackAfter })),
+      steps,
+      previousRoundNumber: previous?.roundNumber ?? null,
+      nextRoundNumber: next?.roundNumber ?? null,
+    };
+  }
+
+  /** The street a completed hand's action log actually reached — not persisted directly, so derived from the last street name any action names. */
+  private deriveFinalStreetIndex(actions: HandActionLogEntry[], gameDefinition: GameDefinition): number {
+    let maxIndex = 0;
+    for (const action of actions) {
+      const streetName = "streetName" in action ? action.streetName : null;
+      if (!streetName) continue;
+      const index = gameDefinition.streets.findIndex((s) => s.name === streetName);
+      if (index > maxIndex) maxIndex = index;
+    }
+    return maxIndex;
+  }
+
+  /** Computes (and persists, the first time) a rabbit hunt for a hand nobody ever revealed it for live — works even though the live runtime hand is long gone, using the persisted `remainingDeck`. */
+  async replayRevealRabbit(tableId: string, handNumber: number): Promise<RabbitReveal> {
+    const row = await this.prisma.hand.findUnique({ where: { tableId_handNumber: { tableId, handNumber } } });
+    if (!row) throw new NotFoundException(`Hand ${handNumber} not found for table ${tableId}`);
+    if (row.rabbitBoard) {
+      return {
+        rabbitBoard: row.rabbitBoard as unknown as Card[],
+        rabbitBoards: (row.rabbitBoards as unknown as Card[][] | null) ?? null,
+      };
+    }
+
+    const gameDefinition = await this.gamesService.getDefinition(row.gameDefinitionId);
+    const finalStreetIndex = this.deriveFinalStreetIndex(row.actions as unknown as HandActionLogEntry[], gameDefinition);
+    const boardsCount = (row.boards as unknown as Card[][] | null)?.length ?? 1;
+    const reveal = computeRabbitReveal(gameDefinition, finalStreetIndex, boardsCount, row.remainingDeck as unknown as Card[]);
+
+    if (reveal.rabbitBoard.length > 0) {
+      await this.prisma.hand.update({
+        where: { id: row.id },
+        data: {
+          rabbitBoard: JSON.parse(JSON.stringify(reveal.rabbitBoard)),
+          rabbitBoards: reveal.rabbitBoards ? JSON.parse(JSON.stringify(reveal.rabbitBoards)) : undefined,
+        },
+      });
+    }
+    return reveal;
   }
 
   private readonly CHAT_HISTORY_LIMIT = 50;

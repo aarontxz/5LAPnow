@@ -23,6 +23,12 @@ export interface PublicSeatView {
   pendingStackAdjustment: number | null;
 }
 
+/** One scoring category's live hand-strength readout (e.g. "Top Board", "Hand Strength" for point-race games; a single unlabeled entry for standard single-board games). `description` is null until enough cards are on the table to evaluate that specific category yet. */
+export interface HandStrengthCategory {
+  label: string;
+  description: string | null;
+}
+
 export interface HandPlayerView {
   seatIndex: number;
   folded: boolean;
@@ -34,8 +40,10 @@ export interface HandPlayerView {
   holeCards: Card[] | null;
   /** True only for the viewer's own seat: the hand is complete, they weren't forced to show (won uncontested or folded), and they haven't already revealed. */
   canShow: boolean;
-  /** Live best-hand label ("Pair of Kings", "Ace High") for whichever board(s) these hole cards are being combined with — only computable once `holeCards` is visible AND at least 5 cards (hole + community) are on the table, so null preflop or whenever holeCards is hidden. */
-  handStrengthLabel: string | null;
+  /** Live hand-strength readout, one entry per scoring category this game actually pays out on (one per board, plus a hole-cards-only category for point-race games that use one) — null only when `holeCards` is hidden from this viewer. */
+  handStrengthCategories: HandStrengthCategory[] | null;
+  /** How many of this seat's hole cards came from the most recent deal/redraw event (0 once any other action has happened since) — e.g. ESG's mid-street top-up. Counts from the end of deal-order, before display sorting. */
+  recentlyDealtCount: number;
 }
 
 export interface HandView {

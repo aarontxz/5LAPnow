@@ -14,6 +14,28 @@ function applyPayment(table: TableState, payment: CardFlipPayment): void {
   if (to) to.stack += payment.amount;
 }
 
+function totalStacks(table: TableState): number {
+  return table.seats.reduce((sum, s) => sum + s.stack, 0);
+}
+
+/**
+ * Applies every payment, then asserts the table's total chip count is
+ * unchanged — a list of {from, to, amount} triples is zero-sum by
+ * construction, so this can only fail if a payment's seat somehow didn't
+ * resolve to a real Seat object. Throws rather than silently proceeding,
+ * since a violation here means chips were created or destroyed.
+ */
+function applyPaymentsConservatively(table: TableState, roundNumber: number, payments: CardFlipPayment[]): void {
+  const before = totalStacks(table);
+  for (const payment of payments) applyPayment(table, payment);
+  const after = totalStacks(table);
+  if (after !== before) {
+    throw new Error(
+      `Card Flip settlement violated chip conservation for round ${roundNumber}: total stacks ${before} -> ${after}`
+    );
+  }
+}
+
 /**
  * Runs one "10 Card Flip" round: deal 3 shared draw piles. Each player, in
  * turn order, draws one card at a time (their choice of pile) and keeps
@@ -86,6 +108,7 @@ export class CardFlipEngine {
       leaderSeatIndex: null,
       actions: [{ type: "deal", seatIndices: turnOrder }],
       result: null,
+      settled: false,
     };
   }
 
@@ -105,7 +128,7 @@ export class CardFlipEngine {
     const player = this.requirePlayer(round, seatIndex);
     const card = pile.pop() as Card;
     player.hand.push(card);
-    round.actions.push({ type: "draw", seatIndex, pileIndex });
+    round.actions.push({ type: "draw", seatIndex, pileIndex, card });
 
     const leader = round.leaderSeatIndex !== null ? this.requirePlayer(round, round.leaderSeatIndex) : null;
     const beatsLeader = leader === null || this.beats(player.hand, leader.hand);
@@ -173,10 +196,9 @@ export class CardFlipEngine {
     const payments: CardFlipPayment[] = [];
     for (const p of round.players) {
       if (p.seatIndex === winnerSeatIndex) continue;
-      const payment: CardFlipPayment = { fromSeatIndex: p.seatIndex, toSeatIndex: winnerSeatIndex, amount };
-      applyPayment(table, payment);
-      payments.push(payment);
+      payments.push({ fromSeatIndex: p.seatIndex, toSeatIndex: winnerSeatIndex, amount });
     }
+    applyPaymentsConservatively(table, round.roundNumber, payments);
 
     round.result = {
       winnerSeatIndices: [winnerSeatIndex],

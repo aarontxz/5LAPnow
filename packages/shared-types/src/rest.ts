@@ -53,6 +53,17 @@ export interface HandLogPlayer {
   displayName: string | null;
   /** Chips this seat put into the pot across the whole hand. */
   totalContributed: number;
+  /** Null if this seat's stack wasn't tracked before this hand existed (only possible for hands played before this field shipped). */
+  stackBefore: number | null;
+  stackAfter: number | null;
+  /**
+   * Redacted per-viewer by the server before this ever reaches a client — null unless
+   * this is the viewer's own seat, or the seat was forced to show (contested pot) or
+   * voluntarily revealed (`shown`). Never trust a client to enforce this.
+   */
+  holeCards: Card[] | null;
+  /** Voluntarily revealed after the hand completed, even though not forced to. */
+  shown: boolean;
 }
 
 export interface HandLogEntry {
@@ -88,6 +99,8 @@ export interface ClangRoundLogPlayer {
   displayName: string | null;
   hand: Card[];
   handValue: number;
+  stackBefore: number | null;
+  stackAfter: number | null;
 }
 
 export interface ClangRoundLogEntry {
@@ -112,6 +125,8 @@ export interface CardFlipRoundLogPlayer {
   displayName: string | null;
   hand: Card[];
   bestHandLabel: string;
+  stackBefore: number | null;
+  stackAfter: number | null;
 }
 
 export interface CardFlipRoundLogEntry {

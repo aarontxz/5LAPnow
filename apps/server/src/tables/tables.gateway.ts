@@ -123,7 +123,7 @@ export class TablesGateway implements OnGatewayInit, OnModuleInit {
 
   @SubscribeMessage("seat:request")
   async onSeatRequest(@ConnectedSocket() socket: AppSocket, @MessageBody() payload: SeatRequestPayload): Promise<void> {
-    await this.guard(socket, async () => {
+    await this.guard(socket, payload.tableId, async () => {
       const displayName = payload.displayName?.trim();
       if (!displayName) throw new Error("A display name is required to sit down");
       // Validate/seat first — only persist the name as the guest's global
@@ -136,14 +136,14 @@ export class TablesGateway implements OnGatewayInit, OnModuleInit {
 
   @SubscribeMessage("seat:approve")
   async onSeatApprove(@ConnectedSocket() socket: AppSocket, @MessageBody() payload: SeatApprovalPayload): Promise<void> {
-    await this.guard(socket, () =>
+    await this.guard(socket, payload.tableId, () =>
       this.tablesService.approveSeatRequest(payload.tableId, payload.requestId, socket.data.userId, payload.buyIn)
     );
   }
 
   @SubscribeMessage("seat:reject")
   async onSeatReject(@ConnectedSocket() socket: AppSocket, @MessageBody() payload: { tableId: string; requestId: string }): Promise<void> {
-    await this.guard(socket, () => this.tablesService.rejectSeatRequest(payload.tableId, payload.requestId, socket.data.userId));
+    await this.guard(socket, payload.tableId, () => this.tablesService.rejectSeatRequest(payload.tableId, payload.requestId, socket.data.userId));
   }
 
   @SubscribeMessage("seat:cancelRequest")
@@ -151,24 +151,24 @@ export class TablesGateway implements OnGatewayInit, OnModuleInit {
     @ConnectedSocket() socket: AppSocket,
     @MessageBody() payload: { tableId: string; requestId: string }
   ): Promise<void> {
-    await this.guard(socket, () => this.tablesService.cancelSeatRequest(payload.tableId, payload.requestId, socket.data.userId));
+    await this.guard(socket, payload.tableId, () => this.tablesService.cancelSeatRequest(payload.tableId, payload.requestId, socket.data.userId));
   }
 
   @SubscribeMessage("seat:adjustStack")
   async onAdjustStack(@ConnectedSocket() socket: AppSocket, @MessageBody() payload: SeatAdjustStackPayload): Promise<void> {
-    await this.guard(socket, () =>
+    await this.guard(socket, payload.tableId, () =>
       this.tablesService.adjustStack(payload.tableId, payload.seatIndex, socket.data.userId, payload.mode, payload.amount)
     );
   }
 
   @SubscribeMessage("seat:remove")
   async onRemovePlayer(@ConnectedSocket() socket: AppSocket, @MessageBody() payload: SeatIndexPayload): Promise<void> {
-    await this.guard(socket, () => this.tablesService.removePlayer(payload.tableId, payload.seatIndex, socket.data.userId));
+    await this.guard(socket, payload.tableId, () => this.tablesService.removePlayer(payload.tableId, payload.seatIndex, socket.data.userId));
   }
 
   @SubscribeMessage("seat:setAway")
   async onSetAway(@ConnectedSocket() socket: AppSocket, @MessageBody() payload: SeatAwayPayload): Promise<void> {
-    await this.guard(socket, async () => {
+    await this.guard(socket, payload.tableId, async () => {
       await this.tablesService.setSeatAway(payload.tableId, payload.seatIndex, socket.data.userId, payload.away);
       // TablesService.setSeatAway already auto-advances poker internally (it
       // owns that engine directly); Clang/Card Flip live in their own
@@ -184,7 +184,7 @@ export class TablesGateway implements OnGatewayInit, OnModuleInit {
 
   @SubscribeMessage("table:transferOwnership")
   async onTransferOwnership(@ConnectedSocket() socket: AppSocket, @MessageBody() payload: SeatIndexPayload): Promise<void> {
-    await this.guard(socket, () => this.tablesService.transferOwnership(payload.tableId, payload.seatIndex, socket.data.userId));
+    await this.guard(socket, payload.tableId, () => this.tablesService.transferOwnership(payload.tableId, payload.seatIndex, socket.data.userId));
   }
 
   /**
@@ -195,7 +195,7 @@ export class TablesGateway implements OnGatewayInit, OnModuleInit {
    */
   @SubscribeMessage("table:startHand")
   async onStartHand(@ConnectedSocket() socket: AppSocket, @MessageBody() payload: { tableId: string }): Promise<void> {
-    await this.guard(socket, async () => {
+    await this.guard(socket, payload.tableId, async () => {
       const nextKind = await this.tablesService.resolveNextGameKind(payload.tableId);
       if (nextKind === "clang") {
         await this.clangService.startRound(payload.tableId, socket.data.userId);
@@ -209,27 +209,27 @@ export class TablesGateway implements OnGatewayInit, OnModuleInit {
 
   @SubscribeMessage("table:setNextGame")
   async onSetNextGame(@ConnectedSocket() socket: AppSocket, @MessageBody() payload: { tableId: string; gameDefinitionId: string }): Promise<void> {
-    await this.guard(socket, () => this.tablesService.setNextGame(payload.tableId, socket.data.userId, payload.gameDefinitionId));
+    await this.guard(socket, payload.tableId, () => this.tablesService.setNextGame(payload.tableId, socket.data.userId, payload.gameDefinitionId));
   }
 
   @SubscribeMessage("table:setGameConfig")
   async onSetGameConfig(@ConnectedSocket() socket: AppSocket, @MessageBody() payload: SetGameConfigPayload): Promise<void> {
-    await this.guard(socket, () => this.tablesService.setGameConfig(payload.tableId, socket.data.userId, payload));
+    await this.guard(socket, payload.tableId, () => this.tablesService.setGameConfig(payload.tableId, socket.data.userId, payload));
   }
 
   @SubscribeMessage("hand:revealRabbit")
   async onRevealRabbit(@ConnectedSocket() socket: AppSocket, @MessageBody() payload: { tableId: string }): Promise<void> {
-    await this.guard(socket, () => this.tablesService.revealRabbit(payload.tableId, socket.data.userId));
+    await this.guard(socket, payload.tableId, () => this.tablesService.revealRabbit(payload.tableId, socket.data.userId));
   }
 
   @SubscribeMessage("hand:showCards")
   async onShowCards(@ConnectedSocket() socket: AppSocket, @MessageBody() payload: { tableId: string }): Promise<void> {
-    await this.guard(socket, () => this.tablesService.showCards(payload.tableId, socket.data.userId));
+    await this.guard(socket, payload.tableId, () => this.tablesService.showCards(payload.tableId, socket.data.userId));
   }
 
   @SubscribeMessage("hand:action")
   async onHandAction(@ConnectedSocket() socket: AppSocket, @MessageBody() payload: HandActionRequest): Promise<void> {
-    await this.guard(socket, async () => {
+    await this.guard(socket, payload.tableId, async () => {
       const runtime = this.tablesService.getRuntimeTable(payload.tableId);
       const seat = runtime.table.seats.find((s) => s.playerId === socket.data.userId);
       if (!seat) throw new Error("You are not seated at this table");
@@ -239,7 +239,7 @@ export class TablesGateway implements OnGatewayInit, OnModuleInit {
 
   @SubscribeMessage("clang:draw")
   async onClangDraw(@ConnectedSocket() socket: AppSocket, @MessageBody() payload: { tableId: string }): Promise<void> {
-    await this.guard(socket, async () => {
+    await this.guard(socket, payload.tableId, async () => {
       const seatIndex = this.requireSeatIndex(payload.tableId, socket.data.userId);
       await this.clangService.draw(payload.tableId, seatIndex);
     });
@@ -247,7 +247,7 @@ export class TablesGateway implements OnGatewayInit, OnModuleInit {
 
   @SubscribeMessage("clang:play")
   async onClangPlay(@ConnectedSocket() socket: AppSocket, @MessageBody() payload: ClangRankPayload): Promise<void> {
-    await this.guard(socket, async () => {
+    await this.guard(socket, payload.tableId, async () => {
       const seatIndex = this.requireSeatIndex(payload.tableId, socket.data.userId);
       await this.clangService.play(payload.tableId, seatIndex, payload.rank);
     });
@@ -255,7 +255,7 @@ export class TablesGateway implements OnGatewayInit, OnModuleInit {
 
   @SubscribeMessage("clang:eat")
   async onClangEat(@ConnectedSocket() socket: AppSocket, @MessageBody() payload: { tableId: string }): Promise<void> {
-    await this.guard(socket, async () => {
+    await this.guard(socket, payload.tableId, async () => {
       const seatIndex = this.requireSeatIndex(payload.tableId, socket.data.userId);
       await this.clangService.eat(payload.tableId, seatIndex);
     });
@@ -263,7 +263,7 @@ export class TablesGateway implements OnGatewayInit, OnModuleInit {
 
   @SubscribeMessage("clang:passEat")
   async onClangPassEat(@ConnectedSocket() socket: AppSocket, @MessageBody() payload: { tableId: string }): Promise<void> {
-    await this.guard(socket, async () => {
+    await this.guard(socket, payload.tableId, async () => {
       const seatIndex = this.requireSeatIndex(payload.tableId, socket.data.userId);
       await this.clangService.passEat(payload.tableId, seatIndex);
     });
@@ -271,7 +271,7 @@ export class TablesGateway implements OnGatewayInit, OnModuleInit {
 
   @SubscribeMessage("clang:callClang")
   async onClangCallClang(@ConnectedSocket() socket: AppSocket, @MessageBody() payload: { tableId: string }): Promise<void> {
-    await this.guard(socket, async () => {
+    await this.guard(socket, payload.tableId, async () => {
       const seatIndex = this.requireSeatIndex(payload.tableId, socket.data.userId);
       await this.clangService.callClang(payload.tableId, seatIndex);
     });
@@ -279,7 +279,7 @@ export class TablesGateway implements OnGatewayInit, OnModuleInit {
 
   @SubscribeMessage("clang:callClangInstant")
   async onClangCallClangInstant(@ConnectedSocket() socket: AppSocket, @MessageBody() payload: { tableId: string }): Promise<void> {
-    await this.guard(socket, async () => {
+    await this.guard(socket, payload.tableId, async () => {
       const seatIndex = this.requireSeatIndex(payload.tableId, socket.data.userId);
       await this.clangService.callInstantClang(payload.tableId, seatIndex);
     });
@@ -287,7 +287,7 @@ export class TablesGateway implements OnGatewayInit, OnModuleInit {
 
   @SubscribeMessage("cardflip:draw")
   async onCardFlipDraw(@ConnectedSocket() socket: AppSocket, @MessageBody() payload: CardFlipDrawPayload): Promise<void> {
-    await this.guard(socket, async () => {
+    await this.guard(socket, payload.tableId, async () => {
       const seatIndex = this.requireSeatIndex(payload.tableId, socket.data.userId);
       await this.cardFlipService.draw(payload.tableId, seatIndex, payload.pileIndex);
     });
@@ -295,7 +295,7 @@ export class TablesGateway implements OnGatewayInit, OnModuleInit {
 
   @SubscribeMessage("chat:send")
   async onChatSend(@ConnectedSocket() socket: AppSocket, @MessageBody() payload: ChatSendPayload): Promise<void> {
-    await this.guard(socket, async () => {
+    await this.guard(socket, payload.tableId, async () => {
       const message = await this.tablesService.sendChatMessage(payload.tableId, socket.data.userId, payload.body);
       this.server.to(roomFor(payload.tableId)).emit("chat:message", message);
     });
@@ -308,9 +308,16 @@ export class TablesGateway implements OnGatewayInit, OnModuleInit {
     return seat.seatIndex;
   }
 
-  private async guard(socket: AppSocket, fn: () => Promise<void> | void): Promise<void> {
+  /**
+   * Runs `fn` under this table's lock (see TablesService.withTableLock) so
+   * two requests for the same table can never interleave their reads/writes
+   * of its live state, then reports any error back to just this socket.
+   */
+  private async guard(socket: AppSocket, tableId: string, fn: () => Promise<void> | void): Promise<void> {
     try {
-      await fn();
+      await this.tablesService.withTableLock(tableId, async () => {
+        await fn();
+      });
     } catch (err) {
       socket.emit("action:error", { message: (err as Error).message });
     }

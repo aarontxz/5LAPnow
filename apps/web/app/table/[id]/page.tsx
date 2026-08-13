@@ -11,6 +11,9 @@ import { SeatView } from "@/components/table/SeatView";
 import { ClangActionPanel } from "@/components/table/clang/ClangActionPanel";
 import { CardFlipActionPanel } from "@/components/table/cardflip/CardFlipActionPanel";
 import { PlayingCard } from "@/components/table/PlayingCard";
+import { Board } from "@/components/table/Board";
+import { ClangPiles } from "@/components/table/clang/ClangPiles";
+import { CardFlipPiles } from "@/components/table/cardflip/CardFlipPiles";
 import { ActionControls } from "@/components/table/poker/ActionControls";
 import { AnimatedNumber } from "@/components/table/AnimatedNumber";
 import { LedgerModal } from "@/components/table/LedgerModal";
@@ -523,26 +526,11 @@ export default function TablePage({ params }: { params: Promise<{ id: string }> 
                   )}
                 </AnimatePresence>
                 {clangRound && clangRound.phase !== "complete" && (
-                  <div className="flex items-start gap-3 sm:gap-6">
-                    <div className="flex flex-col items-center gap-0.5">
-                      <PlayingCard card={null} small />
-                      <span className="text-[9px] text-white/40 sm:text-[10px]">
-                        {clangRound.drawPileCount === 0 ? "Pile empty" : `Pile (${clangRound.drawPileCount})`}
-                      </span>
-                    </div>
-                    {clangRound.topDiscard.length > 0 && (
-                      <div className="flex flex-col items-center gap-0.5">
-                        <div className="flex gap-0.5 sm:gap-1">
-                          {clangRound.topDiscard.map((c, i) => (
-                            <PlayingCard key={`discard-${i}-${c.rank}-${c.suit}`} card={c} small dealDelay={i * 0.08} />
-                          ))}
-                        </div>
-                        <span className="text-[9px] text-white/40 sm:text-[10px]">
-                          Discard{clangRound.discardPileCount > clangRound.topDiscard.length ? ` (${clangRound.discardPileCount})` : ""}
-                        </span>
-                      </div>
-                    )}
-                  </div>
+                  <ClangPiles
+                    drawPileCount={clangRound.drawPileCount}
+                    topDiscard={clangRound.topDiscard}
+                    discardPileCount={clangRound.discardPileCount}
+                  />
                 )}
                 <AnimatePresence>
                   {clangRound?.phase === "complete" && clangRound.result && (
@@ -582,24 +570,7 @@ export default function TablePage({ params }: { params: Promise<{ id: string }> 
                   </span>
                 )}
                 {cardFlipRound && cardFlipRound.phase === "turn" && (
-                  <div className="flex items-center justify-center gap-2">
-                    {cardFlipRound.pileCounts.map((count, i) => {
-                      const revealedCard = revealedPile?.pileIndex === i ? revealedPile.card : null;
-                      return (
-                        <div key={i} className="flex flex-col items-center gap-0.5">
-                          {/* Keyed by the card itself (each card is drawn at most once) so
-                              PlayingCard remounts and replays its flip-in animation every
-                              time this pile is the one just drawn from. */}
-                          <PlayingCard
-                            key={revealedCard ? `${revealedCard.rank}-${revealedCard.suit}` : "back"}
-                            card={revealedCard}
-                            small
-                          />
-                          <span className="text-[9px] text-white/40 sm:text-[10px]">{count} left</span>
-                        </div>
-                      );
-                    })}
-                  </div>
+                  <CardFlipPiles pileCounts={cardFlipRound.pileCounts} revealedPile={revealedPile} />
                 )}
                 <AnimatePresence>
                   {cardFlipRound?.phase === "complete" && cardFlipRound.result && (
@@ -623,56 +594,15 @@ export default function TablePage({ params }: { params: Promise<{ id: string }> 
                   )}
                 </AnimatePresence>
               </>
-            ) : boards ? (
-              <div className="flex flex-col gap-1">
-                {boards.map((b, bi) => (
-                  <div key={bi} className="flex gap-0.5 sm:gap-1" style={{ perspective: 800 }}>
-                    {b.map((c, i) => (
-                      <PlayingCard key={i} card={c} small dealDelay={i * 0.12} />
-                    ))}
-                    {(rabbitBoards?.[bi] ?? []).map((c, i) => (
-                      <div key={`r-${i}`} className="opacity-40">
-                        <PlayingCard card={c} small dealDelay={i * 0.08} />
-                      </div>
-                    ))}
-                    {Array.from({ length: 5 - b.length - (rabbitBoards?.[bi]?.length ?? 0) }).map((_, i) =>
-                      canRabbitHunt ? (
-                        <button
-                          key={`ph-${i}`}
-                          onClick={revealRabbit}
-                          title="Rabbit hunt: see the cards that would have come, just for you"
-                          className="h-11 w-8 rounded-md border border-dashed border-amber-200/40 bg-amber-200/5 transition hover:border-amber-200/70 hover:bg-amber-200/10 sm:h-14 sm:w-10"
-                        />
-                      ) : (
-                        <div key={`ph-${i}`} className="h-11 w-8 rounded-md border border-dashed border-white/10 sm:h-14 sm:w-10" />
-                      )
-                    )}
-                  </div>
-                ))}
-              </div>
             ) : (
-              <div className="flex gap-0.5 sm:gap-1" style={{ perspective: 800 }}>
-                {board.map((c, i) => (
-                  <PlayingCard key={i} card={c} small dealDelay={i * 0.12} />
-                ))}
-                {(rabbitBoard ?? []).map((c, i) => (
-                  <div key={`r-${i}`} className="opacity-40">
-                    <PlayingCard card={c} small dealDelay={i * 0.08} />
-                  </div>
-                ))}
-                {Array.from({ length: 5 - board.length - (rabbitBoard?.length ?? 0) }).map((_, i) =>
-                  canRabbitHunt ? (
-                    <button
-                      key={`ph-${i}`}
-                      onClick={revealRabbit}
-                      title="Rabbit hunt: see the cards that would have come, just for you"
-                      className="h-11 w-8 rounded-md border border-dashed border-amber-200/40 bg-amber-200/5 transition hover:border-amber-200/70 hover:bg-amber-200/10 sm:h-14 sm:w-10"
-                    />
-                  ) : (
-                    <div key={`ph-${i}`} className="h-11 w-8 rounded-md border border-dashed border-white/10 sm:h-14 sm:w-10" />
-                  )
-                )}
-              </div>
+              <Board
+                board={board}
+                boards={boards}
+                rabbitBoard={rabbitBoard}
+                rabbitBoards={rabbitBoards}
+                canRabbitHunt={canRabbitHunt}
+                onRevealRabbit={revealRabbit}
+              />
             )}
             {!isClang && !isCardFlip && (
               <>

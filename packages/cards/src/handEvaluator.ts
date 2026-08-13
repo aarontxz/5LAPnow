@@ -112,16 +112,20 @@ function compareScoreArrays(a: HandScore, b: HandScore): number {
   return 0;
 }
 
-function bestCombination(
-  cards: Card[],
-  handSize: number,
-  scoreOptions: ScoreOptions,
-  pickMax: boolean
-): EvaluatedHand {
-  if (cards.length < handSize) {
-    throw new Error(`Need at least ${handSize} cards to evaluate a hand, got ${cards.length}`);
+function modeConfig(mode: HandRankingMode): { scoreOptions: ScoreOptions; pickMax: boolean } {
+  switch (mode) {
+    case "high":
+      return { scoreOptions: { recognizeStraightsAndFlushes: true, allowWheel: true }, pickMax: true };
+    case "low-deuce-to-seven":
+      // Ace always high, straights/flushes count against you; lower raw score wins.
+      return { scoreOptions: { recognizeStraightsAndFlushes: true, allowWheel: false }, pickMax: false };
+    case "low-ace-to-five":
+      // Ace always low, straights/flushes are irrelevant; lower raw score wins.
+      return { scoreOptions: { aceLow: true, recognizeStraightsAndFlushes: false }, pickMax: false };
   }
-  const combos = cards.length === handSize ? [cards] : kCombinations(cards, handSize);
+}
+
+function pickBest(combos: Card[][], scoreOptions: ScoreOptions, pickMax: boolean): EvaluatedHand {
   let best: EvaluatedHand | null = null;
   for (const combo of combos) {
     const score = scoreFiveCards(combo, scoreOptions);
@@ -132,7 +136,21 @@ function bestCombination(
       best = { score, cards: combo };
     }
   }
-  return best as EvaluatedHand;
+  if (!best) throw new Error("No card combinations to evaluate");
+  return best;
+}
+
+function bestCombination(
+  cards: Card[],
+  handSize: number,
+  scoreOptions: ScoreOptions,
+  pickMax: boolean
+): EvaluatedHand {
+  if (cards.length < handSize) {
+    throw new Error(`Need at least ${handSize} cards to evaluate a hand, got ${cards.length}`);
+  }
+  const combos = cards.length === handSize ? [cards] : kCombinations(cards, handSize);
+  return pickBest(combos, scoreOptions, pickMax);
 }
 
 /**
@@ -141,16 +159,43 @@ function bestCombination(
  * same mode (do not compare scores from different modes to each other).
  */
 export function evaluateBestHand(cards: Card[], mode: HandRankingMode = "high"): EvaluatedHand {
-  switch (mode) {
-    case "high":
-      return bestCombination(cards, 5, { recognizeStraightsAndFlushes: true, allowWheel: true }, true);
-    case "low-deuce-to-seven":
-      // Ace always high, straights/flushes count against you; lower raw score wins.
-      return bestCombination(cards, 5, { recognizeStraightsAndFlushes: true, allowWheel: false }, false);
-    case "low-ace-to-five":
-      // Ace always low, straights/flushes are irrelevant; lower raw score wins.
-      return bestCombination(cards, 5, { aceLow: true, recognizeStraightsAndFlushes: false }, false);
+  const { scoreOptions, pickMax } = modeConfig(mode);
+  return bestCombination(cards, 5, scoreOptions, pickMax);
+}
+
+/**
+ * Omaha-style evaluation: the best 5-card hand using exactly `exactHoleCount`
+ * hole cards combined with the rest from `communityCards` (unlike
+ * evaluateBestHand, which picks freely from all cards combined).
+ */
+export function evaluateBestHandExact(
+  holeCards: Card[],
+  communityCards: Card[],
+  exactHoleCount: number,
+  mode: HandRankingMode = "high"
+): EvaluatedHand {
+  const communityCount = 5 - exactHoleCount;
+  if (exactHoleCount < 0 || communityCount < 0) {
+    throw new Error(`exactHoleCount must be between 0 and 5, got ${exactHoleCount}`);
   }
+  if (holeCards.length < exactHoleCount) {
+    throw new Error(`Need at least ${exactHoleCount} hole cards, got ${holeCards.length}`);
+  }
+  if (communityCards.length < communityCount) {
+    throw new Error(`Need at least ${communityCount} community cards, got ${communityCards.length}`);
+  }
+
+  const holeCombos = kCombinations(holeCards, exactHoleCount);
+  const communityCombos = kCombinations(communityCards, communityCount);
+  const combos: Card[][] = [];
+  for (const h of holeCombos) {
+    for (const c of communityCombos) {
+      combos.push([...h, ...c]);
+    }
+  }
+
+  const { scoreOptions, pickMax } = modeConfig(mode);
+  return pickBest(combos, scoreOptions, pickMax);
 }
 
 /** Returns >0 if `a` beats `b`, <0 if `b` beats `a`, 0 for a tie (chop). */

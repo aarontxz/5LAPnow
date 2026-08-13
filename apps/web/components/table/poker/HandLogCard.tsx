@@ -1,12 +1,20 @@
 "use client";
 
-import type { HandActionLogEntry } from "@5lapnow/game-engine";
+import Link from "next/link";
+import type { BettingActionLogEntry, HandActionLogEntry } from "@5lapnow/game-engine";
 import type { HandLogEntry } from "@5lapnow/shared-types";
 import { PlayingCard } from "../PlayingCard";
 import { LogCard, LogCardHeader } from "../LogCard";
 import { cn } from "@/lib/cn";
 
-function actionLabel(action: HandActionLogEntry): string {
+const BETTING_ACTION_TYPES = new Set<HandActionLogEntry["type"]>(["post", "fold", "check", "call", "bet", "raise"]);
+
+/** This card only shows betting actions today — deal/redraw log entries (added for the replay feature) are rendered by the replay view instead. */
+function isBettingAction(action: HandActionLogEntry): action is BettingActionLogEntry {
+  return BETTING_ACTION_TYPES.has(action.type);
+}
+
+function actionLabel(action: BettingActionLogEntry): string {
   switch (action.type) {
     case "post":
       return `posts ${action.amount}`;
@@ -38,10 +46,11 @@ function netsBySeat(hand: HandLogEntry): Map<number, number> {
   return nets;
 }
 
-/** Groups a hand's chronological action log into per-street buckets, preserving street order. */
-function actionsByStreet(actions: HandActionLogEntry[]): Array<[string, HandActionLogEntry[]]> {
-  const byStreet = new Map<string, HandActionLogEntry[]>();
+/** Groups a hand's chronological betting-action log into per-street buckets, preserving street order. */
+function actionsByStreet(actions: HandActionLogEntry[]): Array<[string, BettingActionLogEntry[]]> {
+  const byStreet = new Map<string, BettingActionLogEntry[]>();
   for (const action of actions) {
+    if (!isBettingAction(action)) continue;
     const bucket = byStreet.get(action.streetName);
     if (bucket) bucket.push(action);
     else byStreet.set(action.streetName, [action]);
@@ -49,7 +58,17 @@ function actionsByStreet(actions: HandActionLogEntry[]): Array<[string, HandActi
   return [...byStreet.entries()];
 }
 
-export function HandLogCard({ hand: h, expanded, onToggle }: { hand: HandLogEntry; expanded: boolean; onToggle: () => void }) {
+export function HandLogCard({
+  hand: h,
+  tableId,
+  expanded,
+  onToggle,
+}: {
+  hand: HandLogEntry;
+  tableId: string;
+  expanded: boolean;
+  onToggle: () => void;
+}) {
   const nets = netsBySeat(h);
   const netEntries = h.players
     .map((p) => ({ player: p, net: nets.get(p.seatIndex) ?? 0 }))
@@ -58,8 +77,17 @@ export function HandLogCard({ hand: h, expanded, onToggle }: { hand: HandLogEntr
   const streets = actionsByStreet(h.actions);
 
   return (
-    <LogCard expanded={expanded} onToggle={onToggle}>
-      <LogCardHeader title={`Hand #${h.handNumber} · ${h.gameName}`} playedAt={h.playedAt} />
+    <div className={cn("relative", expanded && "sm:col-span-2 lg:col-span-3")}>
+      {/* Sibling of the LogCard button, not a child — an <a> can't legally nest inside
+          a <button>, which is LogCard's root element. */}
+      <Link
+        href={`/table/${tableId}/hand/${h.handNumber}`}
+        className="absolute right-3 top-3 z-10 shrink-0 whitespace-nowrap rounded-full border border-neutral-300 bg-neutral-50 px-2 py-1 text-[10px] text-neutral-500 hover:border-neutral-400 hover:text-neutral-700"
+      >
+        View replay
+      </Link>
+      <LogCard expanded={expanded} onToggle={onToggle}>
+        <LogCardHeader title={`Hand #${h.handNumber} · ${h.gameName}`} playedAt={h.playedAt} />
       {h.boards && h.boards.length > 1 ? (
         <div className="mt-2 flex flex-col gap-1.5">
           {h.boards.map((boardCards, bi) => {
@@ -131,6 +159,7 @@ export function HandLogCard({ hand: h, expanded, onToggle }: { hand: HandLogEntr
           {streets.length === 0 && <p className="text-xs text-neutral-400">No betting action this hand.</p>}
         </div>
       )}
-    </LogCard>
+      </LogCard>
+    </div>
   );
 }

@@ -5,6 +5,7 @@ import {
   HandPlayerState,
   HandState,
   activeHandPlayers,
+  currentStreetName,
   orderSeatsFromButton,
 } from "./handState.js";
 import {
@@ -52,6 +53,7 @@ export class DeclarativeEngine {
         committedThisStreet: 0,
         hasActedThisRound: false,
         shown: false,
+        foldedHoleCards: null,
       });
     }
 
@@ -120,15 +122,27 @@ export class DeclarativeEngine {
         const player = hand.players.get(seatIndex);
         if (!player || player.folded) continue;
         player.holeCards.push(...hand.deck.draw(street.dealHoleCards));
+        hand.actions.push({
+          streetName: currentStreetName(hand),
+          type: "dealHoleCards",
+          seatIndex,
+          count: street.dealHoleCards,
+        });
       }
     }
     if (street.dealCommunityCards > 0) {
       hand.deck.burn();
       if (hand.boards.length > 1) {
-        for (const b of hand.boards) b.push(...hand.deck.draw(street.dealCommunityCards));
+        hand.boards.forEach((b, boardIndex) => {
+          const cards = hand.deck.draw(street.dealCommunityCards);
+          b.push(...cards);
+          hand.actions.push({ streetName: currentStreetName(hand), type: "dealCommunityCards", boardIndex, cards });
+        });
         hand.board = hand.boards.flat();
       } else {
-        hand.board.push(...hand.deck.draw(street.dealCommunityCards));
+        const cards = hand.deck.draw(street.dealCommunityCards);
+        hand.board.push(...cards);
+        hand.actions.push({ streetName: currentStreetName(hand), type: "dealCommunityCards", boardIndex: 0, cards });
       }
     }
 
@@ -137,6 +151,10 @@ export class DeclarativeEngine {
       hand.phase = "showdown";
       hand.bettingRound = null;
       return;
+    }
+
+    if (street.redrawHoleCardsTo !== undefined) {
+      this.performRedraw(hand, street.redrawHoleCardsTo);
     }
 
     const contestantsWhoCanAct = remaining.filter((p) => !p.allIn);
@@ -156,6 +174,64 @@ export class DeclarativeEngine {
     }
   }
 
+  /** Cards still needed for every future street's guaranteed community-card deal (burn + per-board cards), so redraw never eats into supply community dealing depends on. */
+  private reservedForFutureCommunityDeals(hand: HandState): number {
+    let reserve = 0;
+    for (let i = hand.streetIndex + 1; i < this.gameDefinition.streets.length; i++) {
+      const s = this.gameDefinition.streets[i];
+      if (s && s.dealCommunityCards > 0) reserve += 1 + s.dealCommunityCards * hand.boards.length;
+    }
+    return reserve;
+  }
+
+  /**
+   * Tops every active player's hole cards up toward `target`, deck
+   * permitting — but community-card dealing on future streets always takes
+   * priority, so redraw only ever spends what's left after reserving enough
+   * for every remaining street's community deal. If what's left can't cover
+   * every player's full owed amount, every active player instead draws the
+   * same (smaller) amount — floor(available / activePlayerCount) — and the
+   * shortfall carries forward as a larger "owed" gap at the next redraw.
+   */
+  private performRedraw(hand: HandState, target: number): void {
+    const activeSeatIndices = hand.seatOrder.filter((seatIndex) => {
+      const player = hand.players.get(seatIndex);
+      return player && !player.folded;
+    });
+    if (activeSeatIndices.length === 0) return;
+
+    const owed = new Map<number, number>();
+    let totalOwed = 0;
+    for (const seatIndex of activeSeatIndices) {
+      const player = hand.players.get(seatIndex) as HandPlayerState;
+      const amount = Math.max(0, target - player.holeCards.length);
+      owed.set(seatIndex, amount);
+      totalOwed += amount;
+    }
+    if (totalOwed === 0) return;
+
+    const available = Math.max(0, hand.deck.remaining - this.reservedForFutureCommunityDeals(hand));
+
+    if (available >= totalOwed) {
+      for (const seatIndex of activeSeatIndices) {
+        const amount = owed.get(seatIndex) as number;
+        if (amount === 0) continue;
+        const player = hand.players.get(seatIndex) as HandPlayerState;
+        player.holeCards.push(...hand.deck.draw(amount));
+        hand.actions.push({ streetName: currentStreetName(hand), type: "redraw", seatIndex, count: amount });
+      }
+      return;
+    }
+
+    const perPlayer = Math.floor(available / activeSeatIndices.length);
+    if (perPlayer === 0) return;
+    for (const seatIndex of activeSeatIndices) {
+      const player = hand.players.get(seatIndex) as HandPlayerState;
+      player.holeCards.push(...hand.deck.draw(perPlayer));
+      hand.actions.push({ streetName: currentStreetName(hand), type: "redraw", seatIndex, count: perPlayer });
+    }
+  }
+
   getLegalActions(table: TableState, hand: HandState, seatIndex: number): LegalActionInfo {
     return getBettingLegalActions(table, hand, seatIndex);
   }
@@ -163,6 +239,17 @@ export class DeclarativeEngine {
   applyAction(table: TableState, hand: HandState, seatIndex: number, action: PlayerAction): void {
     if (hand.phase !== "betting") throw new Error("Hand is not in a betting phase");
     applyBettingAction(table, hand, seatIndex, action);
+    if (action.type === "fold" && this.gameDefinition.reshuffleFoldedCardsIntoDeck) {
+      const player = hand.players.get(seatIndex);
+      if (player) {
+        // Snapshot for history before the physical cards go back into the deck —
+        // the reshuffle is about live dealing supply, not a privacy decision, so
+        // there's no reason folding here should also make the hand unrecoverable.
+        player.foldedHoleCards = [...player.holeCards];
+        hand.deck.returnAndShuffle(player.holeCards);
+        player.holeCards = [];
+      }
+    }
     if (isBettingRoundClosed(hand)) {
       hand.bettingRound = null;
       const remaining = activeHandPlayers(hand);

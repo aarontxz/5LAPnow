@@ -1,11 +1,11 @@
 import { PrismaClient } from "@prisma/client";
-import { NO_LIMIT_TEXAS_HOLDEM, DOUBLE_BOARD_BOMB_POT, TRIPLE_BOARD_BOMB_POT } from "@5lapnow/game-engine";
+import { NO_LIMIT_TEXAS_HOLDEM, DOUBLE_BOARD_BOMB_POT, TRIPLE_BOARD_BOMB_POT, ESG, GameDefinition } from "@5lapnow/game-engine";
 import { parseClangGameDefinition } from "@5lapnow/clang-engine";
 import { parseCardFlipGameDefinition } from "@5lapnow/card-flip-engine";
 
 const prisma = new PrismaClient();
 
-async function seedGame(game: typeof NO_LIMIT_TEXAS_HOLDEM) {
+async function seedGame(game: GameDefinition) {
   const definition = JSON.parse(JSON.stringify(game));
   await prisma.gameDefinition.upsert({
     where: { id: game.id },
@@ -45,6 +45,7 @@ async function main() {
   await seedGame(NO_LIMIT_TEXAS_HOLDEM);
   await seedGame(DOUBLE_BOARD_BOMB_POT);
   await seedGame(TRIPLE_BOARD_BOMB_POT);
+  await seedGame(ESG);
   await seedClang();
   await seedCardFlip();
 }

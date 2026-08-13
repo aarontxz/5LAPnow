@@ -16,6 +16,13 @@ export const StreetSchema = z.object({
   dealCommunityCards: z.number().int().min(0).default(0),
   /** Whether a betting round happens after dealing this street. */
   bettingRound: z.boolean().default(true),
+  /**
+   * If set, every active (non-folded) player's hole cards are topped up
+   * toward this absolute count after this street's community cards are
+   * dealt (deck permitting) and before the betting round. Used by draw-style
+   * variants; omitted streets don't redraw.
+   */
+  redrawHoleCardsTo: z.number().int().min(0).optional(),
 });
 export type Street = z.infer<typeof StreetSchema>;
 
@@ -34,8 +41,24 @@ export const HandRankingSchema = z.object({
    * If set, a showdown hand must use exactly this many hole cards plus the
    * rest from the community cards (Omaha-style). If omitted, any
    * combination of hole + community cards may be used (Hold'em-style).
+   * Only consulted for board categories under `scoring: "point-race"` — the
+   * hand-only category (`includeHandOnlyCategory`) always picks freely from
+   * hole cards alone.
    */
   exactHoleCardsUsed: z.number().int().min(0).optional(),
+  /**
+   * "best-hand" (default): each pot is split among the board(s)' best-hand
+   * winners (see `boards` below). "point-race": each board is worth 1 point
+   * (tied board winners split that point), plus 1 more point for the
+   * hand-only category if `includeHandOnlyCategory` is set; whoever has the
+   * highest total points takes the *entire* pot (ties split the pot evenly).
+   */
+  scoring: z.enum(["best-hand", "point-race"]).default("best-hand"),
+  /** Only meaningful under `scoring: "point-race"`: adds a category worth 1 point for the best 5-card hand using hole cards alone (no board). */
+  includeHandOnlyCategory: z.boolean().default(false),
+}).refine((v) => v.scoring !== "point-race" || v.splitPot === "none", {
+  message: "handRanking.splitPot must be \"none\" when scoring is \"point-race\"",
+  path: ["splitPot"],
 });
 export type HandRanking = z.infer<typeof HandRankingSchema>;
 
@@ -53,6 +76,8 @@ export const GameDefinitionSchema = z.object({
   handRanking: HandRankingSchema,
   /** Number of simultaneous community boards; pot is split equally among board winners. */
   boards: z.number().int().min(1).max(4).default(1),
+  /** If true, a folded player's hole cards are immediately returned to the deck and reshuffled in. */
+  reshuffleFoldedCardsIntoDeck: z.boolean().default(false),
 });
 export type GameDefinition = z.infer<typeof GameDefinitionSchema>;
 

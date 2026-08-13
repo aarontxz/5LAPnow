@@ -4,7 +4,7 @@ import { TableState } from "@5lapnow/game-engine";
 import { PrismaService } from "../prisma/prisma.service";
 import { TablesService } from "../tables/tables.service";
 import { GamesService } from "../games/games.service";
-import { RuntimeTable } from "../tables/table-snapshot";
+import { RuntimeTable, captureStacksBefore } from "../tables/table-snapshot";
 
 /**
  * Owns the "10 Card Flip" round/turn state machine (via CardFlipEngine) while
@@ -62,6 +62,10 @@ export class CardFlipService {
       await this.prisma.table.update({ where: { id: tableId }, data: { gameDefinitionId: targetRow.id } });
     }
 
+    // Must snapshot before startRound (mirrors poker/Clang) — read back in
+    // settleIfComplete as each seat's stackBefore.
+    runtime.stacksBeforeCurrentRound = captureStacksBefore(runtime.table);
+
     const engine = new CardFlipEngine();
     runtime.gameCounter += 1;
     runtime.cardFlipRound = engine.startRound(runtime.table, runtime.gameCounter, config);
@@ -96,7 +100,10 @@ export class CardFlipService {
    */
   async advanceAwaySeats(tableId: string): Promise<void> {
     const runtime = this.tablesService.getRuntimeTable(tableId);
-    if (runtime.gameKind !== "cardflip" || !runtime.cardFlipRound) return;
+    // Nothing to resolve once the round has already finished and been settled —
+    // avoids pointlessly re-entering the settlement path on every later "away"
+    // toggle at this table (it used to be harmless-but-wasteful; now it's just unnecessary).
+    if (runtime.gameKind !== "cardflip" || !runtime.cardFlipRound || runtime.cardFlipRound.settled) return;
     await this.finish(tableId, runtime);
   }
 
@@ -124,7 +131,15 @@ export class CardFlipService {
 
   private async settleIfComplete(tableId: string, runtime: RuntimeTable): Promise<void> {
     const round = runtime.cardFlipRound;
-    if (!round || round.phase !== "complete") return;
+    // `round.settled` guards against re-persisting the same round — `finish()` can be
+    // re-entered for an already-complete round any time before the next `startRound`
+    // (e.g. `advanceAwaySeats` fires on every "away" toggle, with no phase check of its
+    // own), and without this guard each re-entry inserted another duplicate round row.
+    if (!round || round.phase !== "complete" || round.settled) return;
+    round.settled = true;
+
+    const stacksBefore = new Map((runtime.stacksBeforeCurrentRound ?? []).map((s) => [s.seatIndex, s.stack]));
+    runtime.stacksBeforeCurrentRound = null;
 
     await this.prisma.cardFlipRound.create({
       data: {
@@ -143,6 +158,8 @@ export class CardFlipService {
                 displayName: seat?.displayName ?? null,
                 hand: p.hand,
                 bestHandLabel: round.result?.reveal.find((r) => r.seatIndex === p.seatIndex)?.bestHandLabel ?? "",
+                stackBefore: stacksBefore.get(p.seatIndex) ?? null,
+                stackAfter: seat?.stack ?? null,
               };
             })
           )

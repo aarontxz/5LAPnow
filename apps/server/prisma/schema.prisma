@@ -184,12 +184,24 @@ model Hand {
   boards           Json?
   /// Serialized ShowdownResult (pots, winners) from @5lapnow/game-engine.
   results          Json
-  /// Snapshot of {seatIndex, userId, displayName, totalContributed} at the time this hand was played,
-  /// so the log can show who was actually in each seat even if it's since turned over.
+  /// Snapshot of {seatIndex, userId, displayName, totalContributed, stackBefore, stackAfter, holeCards}
+  /// at the time this hand was played. `holeCards` is populated for every seat (including folded/never-shown
+  /// ones) — visibility is enforced at read time (replay API), not write time: a viewer only ever sees their
+  /// own seat's holeCards, or a seat's holeCards if it was actually revealed (mustShow or voluntarily shown).
   players          Json
-  /// Ordered HandActionLogEntry[] (posts/folds/checks/calls/bets/raises) from @5lapnow/game-engine.
+  /// Ordered HandActionLogEntry[] from @5lapnow/game-engine — betting actions plus dealCommunityCards
+  /// (full card identities, always public) and dealHoleCards/redraw (count only, never identities).
   actions          Json           @default("[]")
+  /// The hand's leftover deck at completion (Deck.peekRemaining(), in order) — lets a hand replay
+  /// compute a rabbit hunt later even if nobody ever triggered it live.
+  remainingDeck    Json           @default("[]")
+  /// Populated the first time anyone reveals a rabbit hunt for this hand (live or via replay) —
+  /// null until then. Cosmetic only; never affects `board`/`boards`.
+  rabbitBoard      Json?
+  rabbitBoards     Json?
   playedAt         DateTime       @default(now())
+
+  @@unique([tableId, handNumber])
 }
 
 /// Clang round history, parallel to Hand but for the Clang ruleset — kept separate
@@ -211,6 +223,8 @@ model ClangRound {
   /// Ordered ClangActionLogEntry[] (deal/bonus/play/eat/eatDeclined/draw/callClangInstant/callClang/forcedShowdown)
   actions           Json     @default("[]")
   playedAt          DateTime @default(now())
+
+  @@unique([tableId, roundNumber])
 }
 
 /// "10 Card Flip" round history, parallel to ClangRound — three shared draw piles,
@@ -230,6 +244,8 @@ model CardFlipRound {
   /// Ordered CardFlipActionLogEntry[] (deal/draw/complete)
   actions        Json     @default("[]")
   playedAt       DateTime @default(now())
+
+  @@unique([tableId, roundNumber])
 }
 
 enum ChipTransactionType {

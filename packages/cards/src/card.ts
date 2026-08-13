@@ -40,3 +40,9 @@ export function cardToString(card: Card): string {
 export function cardsEqual(a: Card, b: Card): boolean {
   return a.rank === b.rank && a.suit === b.suit;
 }
+
+/** Highest rank first (Ace, King, ... 2), suit as a stable tiebreaker — for displaying a hand sorted instead of in deal order. */
+export function compareCardsForDisplay(a: Card, b: Card): number {
+  if (a.rank !== b.rank) return b.rank - a.rank;
+  return SUITS.indexOf(a.suit) - SUITS.indexOf(b.suit);
+}

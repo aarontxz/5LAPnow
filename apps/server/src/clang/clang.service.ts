@@ -5,7 +5,7 @@ import { TableState } from "@5lapnow/game-engine";
 import { PrismaService } from "../prisma/prisma.service";
 import { TablesService } from "../tables/tables.service";
 import { GamesService } from "../games/games.service";
-import { RuntimeTable } from "../tables/table-snapshot";
+import { RuntimeTable, captureStacksBefore } from "../tables/table-snapshot";
 
 /**
  * Owns the Clang round/turn state machine (via ClangEngine) while reusing
@@ -62,6 +62,10 @@ export class ClangService {
       runtime.hand = null;
       await this.prisma.table.update({ where: { id: tableId }, data: { gameDefinitionId: targetRow.id } });
     }
+
+    // Must snapshot before startRound posts bonus-hit payments — this is what
+    // settleIfComplete reads back as each seat's stackBefore.
+    runtime.stacksBeforeCurrentRound = captureStacksBefore(runtime.table);
 
     const engine = new ClangEngine();
     runtime.gameCounter += 1;
@@ -140,7 +144,10 @@ export class ClangService {
    */
   async advanceAwaySeats(tableId: string): Promise<void> {
     const runtime = this.tablesService.getRuntimeTable(tableId);
-    if (runtime.gameKind !== "clang" || !runtime.clangRound) return;
+    // Nothing to resolve once the round has already finished and been settled —
+    // avoids pointlessly re-entering the settlement path on every later "away"
+    // toggle at this table (it used to be harmless-but-wasteful; now it's just unnecessary).
+    if (runtime.gameKind !== "clang" || !runtime.clangRound || runtime.clangRound.settled) return;
     await this.finish(tableId, runtime);
   }
 
@@ -197,7 +204,16 @@ export class ClangService {
 
   private async settleIfComplete(tableId: string, runtime: RuntimeTable): Promise<void> {
     const round = runtime.clangRound;
-    if (!round || round.phase !== "complete") return;
+    // `round.settled` guards against re-persisting (and, historically, re-syncing on top of a
+    // stale read) the same round — `finish()` can be re-entered for an already-complete round
+    // any time before the next `startRound` (e.g. `advanceAwaySeats` fires on every "away"
+    // toggle, with no phase check of its own), and without this guard each re-entry inserted
+    // another duplicate ClangRound row.
+    if (!round || round.phase !== "complete" || round.settled) return;
+    round.settled = true;
+
+    const stacksBefore = new Map((runtime.stacksBeforeCurrentRound ?? []).map((s) => [s.seatIndex, s.stack]));
+    runtime.stacksBeforeCurrentRound = null;
 
     await this.prisma.clangRound.create({
       data: {
@@ -217,6 +233,8 @@ export class ClangService {
                 displayName: seat?.displayName ?? null,
                 hand: p.hand,
                 handValue: round.result?.reveal.find((r) => r.seatIndex === p.seatIndex)?.value ?? null,
+                stackBefore: stacksBefore.get(p.seatIndex) ?? null,
+                stackAfter: seat?.stack ?? null,
               };
             })
           )

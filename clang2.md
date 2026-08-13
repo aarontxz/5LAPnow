@@ -4,7 +4,7 @@
 
 * 2–5 players.
 * Use a standard 52-card deck.
-* Before each round, agree on a stake amount **X**.
+* Before each round, agree on a stake amount **X** and a eat amount *Y*
 
 ## Card Values
 

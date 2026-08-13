@@ -154,7 +154,9 @@ export function LedgerModal({
                   <CardFlipRoundLogCard key={`cardflip-${item.round.roundNumber}`} round={item.round} expanded={expanded} onToggle={toggle} />
                 );
               }
-              return <HandLogCard key={`poker-${item.hand.handNumber}`} hand={item.hand} expanded={expanded} onToggle={toggle} />;
+              return (
+                <HandLogCard key={`poker-${item.hand.handNumber}`} hand={item.hand} tableId={tableId} expanded={expanded} onToggle={toggle} />
+              );
             })}
           </div>
         )}

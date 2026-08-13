@@ -1,5 +1,5 @@
 import { Seat, TableState } from "./table.js";
-import { HandPlayerState, HandState, currentStreetName } from "./handState.js";
+import { HandPlayerState, HandState, currentStreetName, totalPot } from "./handState.js";
 
 export type PlayerAction =
   | { type: "fold" }
@@ -24,6 +24,24 @@ function commitChips(seat: Seat, player: HandPlayerState, amount: number): void 
   player.committedThisStreet += amount;
   player.totalContributed += amount;
   if (seat.stack === 0) player.allIn = true;
+}
+
+/**
+ * Standard pot-limit max raise-to amount: currentBet + (pot size after this
+ * player calls), where "pot size after calling" is everything already
+ * committed this hand (all streets, all players) plus the call itself.
+ * Still floored by the player's actual stack. Must be computed before
+ * `commitChips` mutates `totalContributed` for this action.
+ */
+function potLimitMaxRaiseTo(table: TableState, hand: HandState, seatIndex: number): number {
+  const seat = table.seats[seatIndex];
+  const player = hand.players.get(seatIndex);
+  const round = hand.bettingRound;
+  if (!seat || !player || !round) return 0;
+  const callAmount = Math.min(Math.max(0, round.currentBet - player.committedThisStreet), seat.stack);
+  const potAfterCall = totalPot(hand) + callAmount;
+  const maxRaiseToAmount = round.currentBet + potAfterCall;
+  return Math.min(maxRaiseToAmount, player.committedThisStreet + seat.stack);
 }
 
 export function postForcedBet(table: TableState, hand: HandState, seatIndex: number, amount: number): void {
@@ -55,7 +73,10 @@ export function getLegalActions(table: TableState, hand: HandState, seatIndex: n
   const callAmount = Math.max(0, round.currentBet - player.committedThisStreet);
   const canCheck = callAmount === 0;
   const canCall = callAmount > 0;
-  const maxRaiseTo = player.committedThisStreet + seat.stack;
+  const maxRaiseTo =
+    hand.gameDefinition.bettingStructure === "pot-limit"
+      ? potLimitMaxRaiseTo(table, hand, seatIndex)
+      : player.committedThisStreet + seat.stack;
   const minRaiseTo = Math.min(maxRaiseTo, round.currentBet + round.minRaiseIncrement);
   const canBetOrRaise = seat.stack > 0 && maxRaiseTo > round.currentBet;
 
@@ -115,6 +136,10 @@ export function applyAction(table: TableState, hand: HandState, seatIndex: numbe
       if (toAmount <= round.currentBet) throw new Error("Bet/raise must exceed the current bet");
       const increment = toAmount - player.committedThisStreet;
       if (increment > seat.stack) throw new Error("Cannot bet/raise more than the stack");
+      if (hand.gameDefinition.bettingStructure === "pot-limit") {
+        const maxTo = potLimitMaxRaiseTo(table, hand, seatIndex);
+        if (toAmount > maxTo) throw new Error(`Bet/raise to ${toAmount} exceeds pot-limit max of ${maxTo}`);
+      }
 
       const raiseSize = toAmount - round.currentBet;
       const isFullRaise = raiseSize >= round.minRaiseIncrement;

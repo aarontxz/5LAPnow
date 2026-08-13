@@ -36,9 +36,11 @@ export function shuffle<T>(items: T[], rng: () => number = secureRandom): T[] {
 
 export class Deck {
   private cards: Card[];
+  private readonly rng: () => number;
 
   constructor(options: DeckOptions = {}) {
-    this.cards = shuffle(createStandardDeck(options), options.rng ?? secureRandom);
+    this.rng = options.rng ?? secureRandom;
+    this.cards = shuffle(createStandardDeck(options), this.rng);
   }
 
   get remaining(): number {
@@ -54,5 +56,15 @@ export class Deck {
 
   burn(): Card | undefined {
     return this.cards.shift();
+  }
+
+  /** Returns cards to the deck (e.g. a folded player's hole cards) and reshuffles. */
+  returnAndShuffle(cards: Card[]): void {
+    this.cards = shuffle([...this.cards, ...cards], this.rng);
+  }
+
+  /** Non-mutating snapshot of what's left, in order — for persisting a completed hand's leftover deck (e.g. for rabbit hunting later). */
+  peekRemaining(): Card[] {
+    return [...this.cards];
   }
 }

@@ -1,4 +1,6 @@
 import type {
+  CardFlipRoundReplayResponse,
+  ClangRoundReplayResponse,
   CreateGameGenerationRequestBody,
   CreateGuestSessionRequest,
   CreateGuestSessionResponse,
@@ -6,11 +8,13 @@ import type {
   EffectiveGameConfig,
   GameGenerationRequestView,
   GoogleSignInRequest,
+  HandReplayResponse,
   TableLedgerResponse,
   TableSnapshot,
   TableSummary,
 } from "@5lapnow/shared-types";
 import type { GameDefinition } from "@5lapnow/game-engine";
+import type { Card } from "@5lapnow/cards";
 import { loadSession } from "./session";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4001";
@@ -57,4 +61,14 @@ export const api = {
   getTableSnapshot: (id: string) => request<TableSnapshot>(`/tables/${id}`),
   getLedger: (id: string) => request<TableLedgerResponse>(`/tables/${id}/ledger`),
   getGameConfig: (id: string) => request<EffectiveGameConfig>(`/tables/${id}/game-config`),
+  getHandReplay: (tableId: string, handNumber: number) =>
+    request<HandReplayResponse>(`/tables/${tableId}/hands/${handNumber}/replay`),
+  replayRevealRabbit: (tableId: string, handNumber: number) =>
+    request<{ rabbitBoard: Card[]; rabbitBoards: Card[][] | null }>(`/tables/${tableId}/hands/${handNumber}/replay/reveal-rabbit`, {
+      method: "POST",
+    }),
+  getClangRoundReplay: (tableId: string, roundNumber: number) =>
+    request<ClangRoundReplayResponse>(`/tables/${tableId}/clang-rounds/${roundNumber}/replay`),
+  getCardFlipRoundReplay: (tableId: string, roundNumber: number) =>
+    request<CardFlipRoundReplayResponse>(`/tables/${tableId}/cardflip-rounds/${roundNumber}/replay`),
 };

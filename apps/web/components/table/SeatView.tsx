@@ -4,6 +4,7 @@ import { useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import type { PublicSeatView, SeatRequestView } from "@5lapnow/shared-types";
 import type { Card } from "@5lapnow/cards";
+import { cardsEqual, compareCardsForDisplay } from "@5lapnow/cards";
 import { PlayingCard } from "./PlayingCard";
 import { AnimatedNumber } from "./AnimatedNumber";
 import { Modal } from "./Modal";
@@ -341,12 +342,17 @@ export function SeatView({
   // Card Flip's hands wrap into a second row at counts Clang's didn't).
   const shouldFanMobile = handLength >= MOBILE_HAND_FAN_THRESHOLD;
   const shouldFanDesktop = handLength >= DESKTOP_HAND_FAN_THRESHOLD;
-  // Only meaningful once we can see the actual cards (own hand, or Card
-  // Flip's public hands) — an opponent's face-down placeholder count never
-  // gets the "just drew this" glow, there's nothing to point at.
-  const justDrewLastCard =
-    (game.kind === "clang" && game.clangPlayer?.justDrewLastCard) ||
-    (game.kind === "cardflip" && game.cardFlipPlayer?.justDrewLastCard);
+  // How many of this hand's cards came from the most recent deal/redraw —
+  // Clang/Card Flip only ever track "was the last single draw mine" (0 or 1);
+  // poker (e.g. ESG's mid-street top-up) can deal several at once.
+  const recentlyDealtCount =
+    game.kind === "poker"
+      ? (game.handPlayer?.recentlyDealtCount ?? 0)
+      : game.kind === "clang"
+        ? (game.clangPlayer?.justDrewLastCard ? 1 : 0)
+        : game.cardFlipPlayer?.justDrewLastCard
+          ? 1
+          : 0;
 
   const seatContent = (
     <motion.div
@@ -437,61 +443,92 @@ export function SeatView({
       )}
       {seat.status === "sitting-out" && <span className="text-[9px] font-bold text-white/40 sm:text-[10px]">AWAY</span>}
       {isEatCandidate && <span className="text-[9px] font-bold text-amber-300 sm:text-[10px]">CAN EAT</span>}
-      {handLength > 0 && (
-        // A fanned overlap (each card after the first pulled left, later ones
-        // painting on top) instead of a wrapped grid — a hand bigger than
-        // poker's 2 cards (Clang/Card Flip can run past 5) stays compact and
-        // readable in one row instead of a blocky multi-row grid; flex-wrap
-        // stays on as a fallback for extreme hand sizes. Poker's 2 cards
-        // never need it, so they just sit normally spaced. One loop handles
-        // both known cards and an opponent's face-down placeholders (`c` is
-        // just null in that case) — see MOBILE/DESKTOP_HAND_FAN_THRESHOLD's
-        // comment for why this used to be two separately-maintained branches.
-        <div
-          className={cn(
-            "flex flex-wrap justify-center",
-            shouldFanMobile ? "gap-0" : "gap-0.5",
-            shouldFanDesktop ? "sm:gap-0" : "sm:gap-1"
-          )}
-        >
-          {Array.from({ length: handLength }).map((_, i) => {
-            const c = cards ? cards[i] : null;
-            const isNewCard = !!c && justDrewLastCard && i === handLength - 1;
-            return (
-              <motion.div
-                key={c ? `up-${i}-${c.rank}-${c.suit}` : `down-${i}`}
-                animate={
-                  isNewCard
-                    ? {
-                        y: [0, -5, 0],
-                        boxShadow: [
-                          "0 0 0px rgba(251,191,36,0)",
-                          "0 0 12px rgba(251,191,36,0.9)",
-                          "0 0 6px rgba(251,191,36,0.5)",
-                        ],
-                      }
-                    : { y: 0, boxShadow: "0 0 0px rgba(251,191,36,0)" }
-                }
-                transition={isNewCard ? { duration: 1.1, repeat: Infinity, repeatType: "reverse", ease: "easeInOut" } : { duration: 0.2 }}
-                className={cn(
-                  "rounded-sm",
-                  i > 0 && (shouldFanMobile ? "-ml-4" : "ml-0"),
-                  i > 0 && (shouldFanDesktop ? "sm:-ml-5" : "sm:ml-0"),
-                  isNewCard && "z-10 ring-2 ring-amber-400"
-                )}
-              >
-                {/* Starts strictly after Card Flip's pile has already reverted to
-                    face-down (CARD_FLIP_PILE_REVEAL_MS = 500ms in page.tsx) — the
-                    revealed pile and this new hand card must never be visible at
-                    the same time, or the same card reads as "in two places". */}
-                <PlayingCard card={c} small dealDelay={isNewCard ? 0.55 : i * 0.08} />
-              </motion.div>
-            );
-          })}
+      {handLength > 0 &&
+        (() => {
+          // Sorted for readability (highest rank first) instead of deal order —
+          // identity (rank+suit), not position, is what matters from here on,
+          // since a single deck never repeats a card within one hand.
+          const sortedCards = cards ? [...cards].sort(compareCardsForDisplay) : null;
+          // The newest `recentlyDealtCount` cards, in deal order — captured before
+          // sorting scrambles their position, so the highlight below can still find
+          // them by identity afterward.
+          const newCards = cards && recentlyDealtCount > 0 ? cards.slice(Math.max(0, cards.length - recentlyDealtCount)) : [];
+
+          // Once a hand needs more than one row, split evenly instead of letting
+          // flex-wrap dump whatever doesn't fit into a lopsided last row — e.g. 15
+          // cards (ESG's river) reads better as 5+5+5 than 7+7+1. Reuses the same
+          // threshold that already governs when fanning kicks in, rather than a new
+          // magic number.
+          const rowCount = Math.max(1, Math.ceil(handLength / DESKTOP_HAND_FAN_THRESHOLD));
+          const baseRowSize = Math.floor(handLength / rowCount);
+          const remainder = handLength % rowCount;
+          let cursor = 0;
+          const rows = Array.from({ length: rowCount }, (_, r) => {
+            const size = baseRowSize + (r < remainder ? 1 : 0);
+            const start = cursor;
+            cursor += size;
+            return { start, size };
+          });
+
+          return (
+            <div className="flex flex-col items-center gap-0.5">
+              {rows.map(({ start, size }, rowIndex) => (
+                <div
+                  key={rowIndex}
+                  className={cn(
+                    "flex justify-center",
+                    shouldFanMobile ? "gap-0" : "gap-0.5",
+                    shouldFanDesktop ? "sm:gap-0" : "sm:gap-1"
+                  )}
+                >
+                  {Array.from({ length: size }).map((_, i) => {
+                    const overallIndex = start + i;
+                    const c = sortedCards ? sortedCards[overallIndex] : null;
+                    // Known cards: match by identity (survives the sort above). Face-down
+                    // opponent cards have no identity to match, so fall back to "one of the
+                    // last N slots" — still conveys "N cards just arrived" without claiming
+                    // to know which specific one.
+                    const isNewCard = c
+                      ? newCards.some((n) => cardsEqual(n, c))
+                      : overallIndex >= handLength - recentlyDealtCount;
+                    return (
+                      <motion.div
+                        key={c ? `up-${c.rank}-${c.suit}` : `down-${overallIndex}`}
+                        animate={
+                          isNewCard
+                            ? { boxShadow: ["0 0 0px rgba(251,191,36,0)", "0 0 7px rgba(251,191,36,0.55)"] }
+                            : { boxShadow: "0 0 0px rgba(251,191,36,0)" }
+                        }
+                        transition={isNewCard ? { duration: 0.6, ease: "easeOut" } : { duration: 0.2 }}
+                        className={cn(
+                          "rounded-sm",
+                          i > 0 && (shouldFanMobile ? "-ml-4" : "ml-0"),
+                          i > 0 && (shouldFanDesktop ? "sm:-ml-5" : "sm:ml-0"),
+                          isNewCard && "ring-1 ring-amber-400/50"
+                        )}
+                      >
+                        {/* Starts strictly after Card Flip's pile has already reverted to
+                            face-down (CARD_FLIP_PILE_REVEAL_MS = 500ms in page.tsx) — the
+                            revealed pile and this new hand card must never be visible at
+                            the same time, or the same card reads as "in two places". */}
+                        <PlayingCard card={c} small dealDelay={isNewCard ? 0.55 : i * 0.08} />
+                      </motion.div>
+                    );
+                  })}
+                </div>
+              ))}
+            </div>
+          );
+        })()}
+      {game.kind === "poker" && game.handPlayer?.handStrengthCategories && (
+        <div className="flex flex-col items-center leading-tight">
+          {game.handPlayer.handStrengthCategories.map((cat, i) => (
+            <span key={i} className="text-[9px] text-white/50 sm:text-[10px]">
+              {cat.label && <span className="text-white/35">{cat.label}: </span>}
+              {cat.description ?? "–"}
+            </span>
+          ))}
         </div>
-      )}
-      {game.kind === "poker" && game.handPlayer?.handStrengthLabel && (
-        <span className="text-[9px] text-white/50 sm:text-[10px]">{game.handPlayer.handStrengthLabel}</span>
       )}
       {game.kind === "cardflip" && game.cardFlipPlayer && (
         <span className={cn("text-[9px] sm:text-[10px]", isLeader ? "font-bold text-amber-300" : "text-white/50")}>

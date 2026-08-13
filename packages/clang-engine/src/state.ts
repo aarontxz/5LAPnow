@@ -41,12 +41,12 @@ export interface ClangRoundResult {
 }
 
 export type ClangActionLogEntry =
-  | { type: "deal"; seatIndices: number[] }
+  | { type: "deal"; seatIndices: number[]; hands: Array<{ seatIndex: number; hand: Card[] }> }
   | { type: "bonus"; seatIndex: number; category: ClangHandCategory; payout: number }
-  | { type: "play"; seatIndex: number; rank: number; count: number }
-  | { type: "eat"; discarderSeatIndex: number; eaterSeatIndex: number; rank: number; count: number }
+  | { type: "play"; seatIndex: number; rank: number; count: number; cards: Card[] }
+  | { type: "eat"; discarderSeatIndex: number; eaterSeatIndex: number; rank: number; count: number; amount: number; cards: Card[] }
   | { type: "eatDeclined"; seatIndex: number; rank: number }
-  | { type: "draw"; seatIndex: number }
+  | { type: "draw"; seatIndex: number; card: Card }
   | { type: "callClangInstant"; seatIndex: number }
   | { type: "callClang"; seatIndex: number }
   | { type: "forcedShowdown" };
@@ -80,4 +80,8 @@ export interface ClangRoundState {
   bonusHits: ClangBonusHit[];
   actions: ClangActionLogEntry[];
   result: ClangRoundResult | null;
+  /** Set once this round has been persisted (ClangService.settleIfComplete) — guards against
+   * re-persisting/re-paying the same round if `finish()` is re-entered after it already
+   * completed (e.g. a player toggling "away" between rounds re-triggers advanceAwaySeats). */
+  settled: boolean;
 }

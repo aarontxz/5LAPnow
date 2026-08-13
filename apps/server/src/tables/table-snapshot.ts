@@ -1,7 +1,7 @@
-import { GameDefinition, HandState, TableState, getLegalActions } from "@5lapnow/game-engine";
+import { GameDefinition, HandState, PotResult, TableState, getLegalActions, recentlyDealtCounts } from "@5lapnow/game-engine";
 import { ClangRoundState, handValue } from "@5lapnow/clang-engine";
 import { CardFlipRoundState, describePartialHand } from "@5lapnow/card-flip-engine";
-import { Card, compareEvaluatedHands, describeEvaluatedHand, evaluateBestHand } from "@5lapnow/cards";
+import { Card, describeEvaluatedHand, evaluateBestHand, evaluateBestHandExact } from "@5lapnow/cards";
 import {
   CardFlipLegalActions,
   CardFlipPlayerView,
@@ -10,6 +10,7 @@ import {
   ClangPlayerView,
   ClangRoundView,
   HandPlayerView,
+  HandStrengthCategory,
   HandView,
   PublicSeatView,
   SeatRequestView,
@@ -72,24 +73,77 @@ export interface RuntimeTable {
   nextGameOverride: NextGameOverride | null;
   /** Owner-configured per-engine value overrides (blinds/ante, stake, ...) — see TableGameConfigOverrides. Persisted on Table.gameConfigOverrides, mirrored here for the hot path. */
   gameConfigOverrides: TableGameConfigOverrides;
+  /**
+   * Snapshot of every active seat's stack taken right before the current
+   * hand/round's forced bets/stakes are posted (TablesService.startHand /
+   * ClangService.startRound / CardFlipService.startRound) — read and cleared
+   * at settlement time to persist `stackBefore` per seat for history/replay.
+   * Null whenever no hand/round is in flight.
+   */
+  stacksBeforeCurrentRound: Array<{ seatIndex: number; userId: string; stack: number }> | null;
+}
+
+/** Captures every active, occupied seat's current stack — call right before forced bets/stakes are posted for a new hand/round. */
+export function captureStacksBefore(table: TableState): Array<{ seatIndex: number; userId: string; stack: number }> {
+  return table.seats
+    .filter((s) => s.status === "active" && s.playerId !== null)
+    .map((s) => ({ seatIndex: s.seatIndex, userId: s.playerId as string, stack: s.stack }));
 }
 
 /**
- * Live "Pair of Kings" / "Ace High" label for a poker seat's hole cards
- * combined with the board(s) currently dealt. Multi-board games (bomb pots)
- * evaluate each board separately — mixing cards across boards would be
- * meaningless — and show whichever board currently gives the stronger hand.
- * Null preflop (fewer than 5 combined cards on any board yet).
+ * Seats that were forced to show their hand at showdown — a pure function of
+ * already-persisted `results`, matching `pots.ts`'s own `settleShowdown`
+ * formula exactly, so callers never need a separately-persisted field for
+ * this. Used to redact a completed hand's `players[].holeCards` for anyone
+ * who isn't that seat's own viewer: only a mustShow seat (or one that later
+ * voluntarily revealed, tracked separately via `players[].shown`) may ever
+ * have its hole cards shown to someone else.
  */
-function computeHandStrengthLabel(holeCards: Card[], boards: Card[][]): string | null {
-  let best: ReturnType<typeof evaluateBestHand> | null = null;
-  for (const board of boards) {
-    const combined = [...holeCards, ...board];
-    if (combined.length < 5) continue;
-    const evaluated = evaluateBestHand(combined, "high");
-    if (!best || compareEvaluatedHands(evaluated, best, "high") > 0) best = evaluated;
+export function mustShowSeatsFromResults(results: PotResult[]): Set<number> {
+  return new Set(results.filter((p) => p.eligibleSeats.length > 1).flatMap((p) => p.eligibleSeats));
+}
+
+function boardCategoryLabel(boardIndex: number, numBoards: number): string {
+  if (numBoards <= 1) return "";
+  if (numBoards === 2) return boardIndex === 0 ? "Top Board" : "Btm Board";
+  return `Board ${boardIndex + 1}`;
+}
+
+/**
+ * Live per-category hand-strength readout ("Pair of Kings", "Ace High") for
+ * a poker seat's hole cards, one entry per category this game's own scoring
+ * actually pays out on: one per board (using the game's `exactHoleCardsUsed`
+ * rule if it has one, e.g. true Omaha), plus a hole-cards-only category for
+ * point-race games that use one (`includeHandOnlyCategory`). A category's
+ * `description` is null until enough cards are on the table to evaluate it
+ * yet (e.g. before its board is dealt) — the category itself is always
+ * present once hole cards are visible, so every applicable category shows
+ * from the start of the hand, not just once a global threshold is met.
+ */
+function computeHandStrengthCategories(holeCards: Card[], hand: HandState, gameDefinition: GameDefinition): HandStrengthCategory[] {
+  const { mode, exactHoleCardsUsed, includeHandOnlyCategory } = gameDefinition.handRanking;
+  const boards = hand.boards.length > 0 ? hand.boards : [hand.board];
+
+  const categories: HandStrengthCategory[] = boards.map((boardCards, boardIndex) => {
+    let description: string | null = null;
+    if (exactHoleCardsUsed !== undefined) {
+      const requiredCommunity = Math.max(0, 5 - exactHoleCardsUsed);
+      if (holeCards.length >= exactHoleCardsUsed && boardCards.length >= requiredCommunity) {
+        description = describeEvaluatedHand(evaluateBestHandExact(holeCards, boardCards, exactHoleCardsUsed, mode), mode);
+      }
+    } else {
+      const combined = [...holeCards, ...boardCards];
+      if (combined.length >= 5) description = describeEvaluatedHand(evaluateBestHand(combined, mode), mode);
+    }
+    return { label: boardCategoryLabel(boardIndex, boards.length), description };
+  });
+
+  if (includeHandOnlyCategory) {
+    const description = holeCards.length >= 5 ? describeEvaluatedHand(evaluateBestHand(holeCards, mode), mode) : null;
+    categories.push({ label: "Hand Strength", description });
   }
-  return best ? describeEvaluatedHand(best, "high") : null;
+
+  return categories;
 }
 
 function totalPot(hand: HandState): number {
@@ -251,13 +305,13 @@ export function buildTableSnapshot(runtime: RuntimeTable, viewerUserId: string |
     const street = gameDefinition.streets[hand.streetIndex];
     const viewerSeatIndex = viewerUserId !== null ? (table.seats.find((s) => s.playerId === viewerUserId)?.seatIndex ?? null) : null;
     const mustShowSeats = new Set(hand.results?.mustShowSeats ?? []);
+    const dealtCounts = recentlyDealtCounts(hand.actions);
     const players: HandPlayerView[] = [...hand.players.values()].map((p) => {
       const isOwnSeat = viewerUserId !== null && table.seats[p.seatIndex]?.playerId === viewerUserId;
       // Only seats that lost a real card comparison (contested pot) are forced to show;
       // everyone else — uncontested winners and folders — stays hidden unless they opt in via `shown`.
       const revealAtComplete = hand.phase === "complete" && (mustShowSeats.has(p.seatIndex) || p.shown);
       const holeCardsVisible = isOwnSeat || revealAtComplete;
-      const boards = hand.boards.length > 0 ? hand.boards : [hand.board];
       return {
         seatIndex: p.seatIndex,
         folded: p.folded,
@@ -267,7 +321,8 @@ export function buildTableSnapshot(runtime: RuntimeTable, viewerUserId: string |
         holeCardCount: p.holeCards.length,
         holeCards: holeCardsVisible ? p.holeCards : null,
         canShow: isOwnSeat && hand.phase === "complete" && !revealAtComplete && p.holeCards.length > 0,
-        handStrengthLabel: holeCardsVisible ? computeHandStrengthLabel(p.holeCards, boards) : null,
+        handStrengthCategories: holeCardsVisible ? computeHandStrengthCategories(p.holeCards, hand, gameDefinition) : null,
+        recentlyDealtCount: dealtCounts.get(p.seatIndex) ?? 0,
       };
     });
 

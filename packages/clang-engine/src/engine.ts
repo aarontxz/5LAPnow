@@ -25,6 +25,28 @@ function applyPayment(table: TableState, payment: ClangPayment): void {
   if (to) to.stack += payment.amount;
 }
 
+function totalStacks(table: TableState): number {
+  return table.seats.reduce((sum, s) => sum + s.stack, 0);
+}
+
+/**
+ * Applies every payment, then asserts the table's total chip count is
+ * unchanged — a list of {from, to, amount} triples is zero-sum by
+ * construction, so this can only fail if a payment's seat somehow didn't
+ * resolve to a real Seat object. Throws rather than silently proceeding,
+ * since a violation here means chips were created or destroyed.
+ */
+function applyPaymentsConservatively(table: TableState, roundNumber: number, payments: ClangPayment[]): void {
+  const before = totalStacks(table);
+  for (const payment of payments) applyPayment(table, payment);
+  const after = totalStacks(table);
+  if (after !== before) {
+    throw new Error(
+      `Clang settlement violated chip conservation for round ${roundNumber}: total stacks ${before} -> ${after}`
+    );
+  }
+}
+
 /**
  * Runs one Clang round: deal, instant-21 window, turn-based Play/Eat/Call Clang,
  * settlement. Mirrors DeclarativeEngine's constructor-injected-RNG pattern so
@@ -78,7 +100,7 @@ export class ClangEngine {
       hand: deck.splice(0, HAND_SIZE),
     }));
 
-    const bonusHits = this.applyBonusHits(table, players, bonusPayouts);
+    const bonusHits = this.applyBonusHits(table, roundNumber, players, bonusPayouts);
 
     return {
       roundNumber,
@@ -96,10 +118,15 @@ export class ClangEngine {
       deckExhausted: false,
       bonusHits,
       actions: [
-        { type: "deal", seatIndices: turnOrder },
+        {
+          type: "deal",
+          seatIndices: turnOrder,
+          hands: players.map((p) => ({ seatIndex: p.seatIndex, hand: p.hand })),
+        },
         ...bonusHits.map((h) => ({ type: "bonus" as const, seatIndex: h.seatIndex, category: h.category, payout: h.payout })),
       ],
       result: null,
+      settled: false,
     };
   }
 
@@ -108,7 +135,12 @@ export class ClangEngine {
    * every other seated player pays the payout to whoever was dealt that
    * category. Independent of the round's later outcome (does not end the round).
    */
-  private applyBonusHits(table: TableState, players: ClangPlayerState[], bonusPayouts: ClangBonusPayouts): ClangBonusHit[] {
+  private applyBonusHits(
+    table: TableState,
+    roundNumber: number,
+    players: ClangPlayerState[],
+    bonusPayouts: ClangBonusPayouts
+  ): ClangBonusHit[] {
     const hits: ClangBonusHit[] = [];
     for (const player of players) {
       const category = classifyHand(player.hand);
@@ -118,10 +150,9 @@ export class ClangEngine {
       const payments: ClangPayment[] = [];
       for (const other of players) {
         if (other.seatIndex === player.seatIndex) continue;
-        const payment: ClangPayment = { fromSeatIndex: other.seatIndex, toSeatIndex: player.seatIndex, amount: payout };
-        applyPayment(table, payment);
-        payments.push(payment);
+        payments.push({ fromSeatIndex: other.seatIndex, toSeatIndex: player.seatIndex, amount: payout });
       }
+      applyPaymentsConservatively(table, roundNumber, payments);
       hits.push({ seatIndex: player.seatIndex, category, payout, payments });
     }
     return hits;
@@ -170,7 +201,7 @@ export class ClangEngine {
     player.hand = remaining;
     round.discardPile.push(...removed);
     round.lastDiscardCount = removed.length;
-    round.actions.push({ type: "play", seatIndex, rank, count: removed.length });
+    round.actions.push({ type: "play", seatIndex, rank, count: removed.length, cards: removed });
 
     const eaterSeatIndex = round.turnOrder[(round.turnIndex + 1) % round.turnOrder.length] as number;
     const eater = this.requirePlayer(round, eaterSeatIndex);
@@ -200,9 +231,9 @@ export class ClangEngine {
     round.lastDiscardCount = removed.length;
 
     const amount = round.eatPaymentPerCard * removed.length;
-    applyPayment(table, { fromSeatIndex: discarderSeatIndex, toSeatIndex: seatIndex, amount });
+    applyPaymentsConservatively(table, round.roundNumber, [{ fromSeatIndex: discarderSeatIndex, toSeatIndex: seatIndex, amount }]);
 
-    round.actions.push({ type: "eat", discarderSeatIndex, eaterSeatIndex: seatIndex, rank, count: removed.length });
+    round.actions.push({ type: "eat", discarderSeatIndex, eaterSeatIndex: seatIndex, rank, count: removed.length, amount, cards: removed });
 
     const newDepth = chainDepth + 1;
     // Check if the next player in the turn order can continue the eat chain.
@@ -264,7 +295,7 @@ export class ClangEngine {
     const card = round.drawPile.pop() as Card;
     const player = this.requirePlayer(round, seatIndex);
     player.hand.push(card);
-    round.actions.push({ type: "draw", seatIndex });
+    round.actions.push({ type: "draw", seatIndex, card });
   }
 
   /**
@@ -301,10 +332,9 @@ export class ClangEngine {
     const payments: ClangPayment[] = [];
     for (const p of round.players) {
       if (p.seatIndex === winnerSeatIndex) continue;
-      const payment: ClangPayment = { fromSeatIndex: p.seatIndex, toSeatIndex: winnerSeatIndex, amount: round.stake };
-      applyPayment(table, payment);
-      payments.push(payment);
+      payments.push({ fromSeatIndex: p.seatIndex, toSeatIndex: winnerSeatIndex, amount: round.stake });
     }
+    applyPaymentsConservatively(table, round.roundNumber, payments);
 
     round.result = {
       type: "instant",
@@ -359,7 +389,7 @@ export class ClangEngine {
       }
     }
 
-    for (const payment of payments) applyPayment(table, payment);
+    applyPaymentsConservatively(table, round.roundNumber, payments);
 
     round.result = {
       type,

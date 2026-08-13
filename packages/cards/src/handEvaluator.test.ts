@@ -3,6 +3,7 @@ import { Card } from "./card.js";
 import {
   compareEvaluatedHands,
   evaluateBestHand,
+  evaluateBestHandExact,
   evaluateQualifyingLow,
 } from "./handEvaluator.js";
 
@@ -87,6 +88,37 @@ describe("evaluateBestHand (low-deuce-to-seven)", () => {
     const straight = evaluateBestHand(cards("7s 6h 5d 4c 3s"), "low-deuce-to-seven");
     const nonStraight = evaluateBestHand(cards("7s 6h 5d 4c 2s"), "low-deuce-to-seven");
     expect(compareEvaluatedHands(straight, nonStraight, "low-deuce-to-seven")).toBeLessThan(0);
+  });
+});
+
+describe("evaluateBestHandExact (true Omaha: exactly N hole cards)", () => {
+  it("excludes hands that would need fewer than N hole cards, unlike evaluateBestHand", () => {
+    // Board has 4 spades; hand holds exactly 1 spade (As) plus 3 off-suit cards.
+    // Combined best-5 finds an ace-high flush using just 1 hole card — illegal in Omaha.
+    const hole = cards("As 7h 8c 9d");
+    const board = cards("Ks Qs Js 2s 3d");
+
+    const combined = evaluateBestHand([...hole, ...board], "high");
+    expect(combined.score[0]).toBe(5); // flush, using only "As" from the hand
+
+    const exact = evaluateBestHandExact(hole, board, 2, "high");
+    expect(exact.score[0]).toBe(0); // no pairs across hole/board ranks: forced down to high card
+  });
+
+  it("finds the best legal combination, not just any", () => {
+    // Board is a club royal flush by itself; hand holds a pair of aces plus off cards.
+    // With exactly 2 hole cards required, the best legal hand is trip aces (using the
+    // board's ace of clubs), not the board's untouchable royal flush.
+    const hole = cards("Ah Ad 2c 3d");
+    const board = cards("Ac Kc Qc Jc Tc");
+
+    const exact = evaluateBestHandExact(hole, board, 2, "high");
+    expect(exact.score[0]).toBe(3); // three of a kind (aces)
+  });
+
+  it("throws if there aren't enough hole or community cards", () => {
+    expect(() => evaluateBestHandExact(cards("As Kh"), cards("Qs Js Ts 2c 3d"), 3, "high")).toThrow();
+    expect(() => evaluateBestHandExact(cards("As Kh 2c"), cards("Qs Js"), 2, "high")).toThrow();
   });
 });
 

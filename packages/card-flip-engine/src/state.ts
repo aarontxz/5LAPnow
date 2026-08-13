@@ -29,7 +29,7 @@ export interface CardFlipRoundResult {
 
 export type CardFlipActionLogEntry =
   | { type: "deal"; seatIndices: number[] }
-  | { type: "draw"; seatIndex: number; pileIndex: number }
+  | { type: "draw"; seatIndex: number; pileIndex: number; card: Card }
   | { type: "complete" };
 
 export interface CardFlipRoundState {
@@ -49,4 +49,8 @@ export interface CardFlipRoundState {
   leaderSeatIndex: number | null;
   actions: CardFlipActionLogEntry[];
   result: CardFlipRoundResult | null;
+  /** Set once this round has been persisted (CardFlipService.settleIfComplete) — guards against
+   * re-persisting/re-paying the same round if `finish()` is re-entered after it already
+   * completed (e.g. a player toggling "away" between rounds re-triggers advanceAwaySeats). */
+  settled: boolean;
 }
