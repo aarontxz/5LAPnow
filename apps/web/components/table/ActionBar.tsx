@@ -87,7 +87,7 @@ export const ActionBar = forwardRef<
           "border-t border-white/10 bg-black/60 backdrop-blur-md sm:rounded-xl sm:border sm:bg-black/40 sm:shadow-2xl",
         expanded
           ? "max-h-[70vh] overflow-y-auto pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:h-auto sm:max-h-none sm:overflow-visible sm:pb-3"
-          : `${FIXED_ACTION_BAR_HEIGHT_CLASS} justify-center overflow-y-auto pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:h-auto sm:justify-start sm:overflow-visible sm:pb-3`
+          : `${FIXED_ACTION_BAR_HEIGHT_CLASS} justify-end overflow-y-auto pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:h-auto sm:justify-start sm:overflow-visible sm:pb-3`
       )}
     >
       {children}
