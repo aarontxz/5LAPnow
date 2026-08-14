@@ -35,14 +35,14 @@ const SEAT_BOX = "min-h-20 min-w-20 max-w-52 w-max sm:min-h-32 sm:min-w-44 sm:ma
 // Phones have much less room per seat than desktop (SEAT_BOX's max-w-52 vs.
 // sm:max-w-72), so the two need different fan thresholds — a hand fans
 // (compacts via negative-margin overlap) once it reaches this many cards,
-// below which it renders full-size and normally spaced. sm:max-w-72 (288px,
-// minus ~16px padding = ~272px content) comfortably fits 6 unfanned small
-// PlayingCards at the sm+ size (40px + 4px gap each = 264px), so desktop's
-// threshold stays at 7. Every hand-card row (own hand, opponents' face-down
-// counts, Clang, Card Flip) reads these same two constants, so mobile/desktop
-// can't drift into more than one definition of "fanned" per platform.
+// below which it renders full-size and normally spaced. Also caps how many
+// cards land in one row (see the row-split math below) — e.g. ESG's 15-card
+// river now splits 8+7 instead of 5+5+5. Every hand-card row (own hand,
+// opponents' face-down counts, Clang, Card Flip) reads these same two
+// constants, so mobile/desktop can't drift into more than one definition of
+// "fanned" per platform.
 const MOBILE_HAND_FAN_THRESHOLD = 3;
-const DESKTOP_HAND_FAN_THRESHOLD = 7;
+const DESKTOP_HAND_FAN_THRESHOLD = 8;
 const EMPTY_BOX_CLASS = cn(
   SEAT_BOX,
   "flex flex-col items-center justify-center gap-1 rounded-xl border border-dashed border-white/20 bg-neutral-800 p-1.5 sm:p-2"
@@ -456,7 +456,7 @@ export function SeatView({
 
           // Once a hand needs more than one row, split evenly instead of letting
           // flex-wrap dump whatever doesn't fit into a lopsided last row — e.g. 15
-          // cards (ESG's river) reads better as 5+5+5 than 7+7+1. Reuses the same
+          // cards (ESG's river) reads better as 8+7 than 15+0. Reuses the same
           // threshold that already governs when fanning kicks in, rather than a new
           // magic number.
           const rowCount = Math.max(1, Math.ceil(handLength / DESKTOP_HAND_FAN_THRESHOLD));

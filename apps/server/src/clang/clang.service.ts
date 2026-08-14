@@ -61,6 +61,7 @@ export class ClangService {
       runtime.gameDefinitionId = targetRow.id;
       runtime.gameName = targetRow.name;
       runtime.hand = null;
+      runtime.cardFlipRound = null;
       await this.prisma.table.update({ where: { id: tableId }, data: { gameDefinitionId: targetRow.id } });
     }
 

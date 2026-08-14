@@ -549,9 +549,17 @@ export default function TablePage({ params }: { params: Promise<{ id: string }> 
       >
           <div
             className={cn(
-              "absolute left-1/2 top-1/2 flex -translate-x-1/2 -translate-y-1/2 flex-col items-center gap-1 sm:gap-2",
-              boardRaised ? "z-30" : "z-0"
+              "absolute left-1/2 top-1/2 flex -translate-x-1/2 -translate-y-1/2 flex-col items-center gap-1 rounded-xl border p-1.5 transition-colors sm:gap-2 sm:p-2",
+              boardRaised ? "z-30 border-white/25 bg-black/50 shadow-xl" : "z-0 border-white/10 bg-black/20"
             )}
+            onMouseEnter={() => setBoardRaised(true)}
+            onMouseLeave={() => setBoardRaised(false)}
+            onPointerDown={(e) => {
+              // Mirrors SeatView's raise pattern: mouse already gets hover above, so
+              // only toggle here for touch/pen, which has no hover state.
+              if (e.pointerType === "mouse") return;
+              setBoardRaised((cur) => !cur);
+            }}
           >
             {isClang ? (
               <>
@@ -669,8 +677,6 @@ export default function TablePage({ params }: { params: Promise<{ id: string }> 
                 rabbitBoards={rabbitBoards}
                 canRabbitHunt={canRabbitHunt}
                 onRevealRabbit={revealRabbit}
-                raised={boardRaised}
-                onRaisedChange={setBoardRaised}
               />
             )}
             {!isClang && !isCardFlip && (

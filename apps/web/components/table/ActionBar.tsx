@@ -26,14 +26,12 @@ export const FIXED_ACTION_BAR_HEIGHT_CLASS = "h-[10rem]";
  * they all reserve identical felt space and none of them can quietly start
  * covering it.
  *
- * Only ever has a solid background while `expanded` — resting, it's fully
- * see-through (every individual button already carries its own opaque pill
- * background, so buttons stay legible without one), so it can never visually
- * block a seat/the board it happens to sit near. Once genuinely overlapping
- * the felt in its expanded state, though, a solid backdrop is what makes its
- * own content (sliders, inputs) readable against whatever's behind it — and
- * at that point it's the thing the player is actively using, so covering the
- * felt there is fine.
+ * Transparent by default — every individual button already carries its own
+ * opaque pill background, so buttons stay legible without one, and it can
+ * never visually block a seat/the board it happens to sit near. Opt into a
+ * solid backdrop (`solidBackground`) when the bar's own direct content isn't
+ * self-contained like that (plain text, sliders, inputs) and needs one to
+ * stay readable against whatever's behind it.
  */
 export const ActionBar = forwardRef<
   HTMLDivElement,
@@ -47,26 +45,33 @@ export const ActionBar = forwardRef<
      */
     centerItems?: boolean;
     /**
+     * Gives the bar a solid backdrop instead of staying see-through — for
+     * content that isn't already self-contained/legible on its own (plain
+     * text, sliders, inputs). Poker turns this on together with `expanded`
+     * (see below); the hand replayer's step description/nav bar sets it
+     * permanently since it's always plain text, with no expand/collapse of
+     * its own.
+     */
+    solidBackground?: boolean;
+    /**
      * True while this panel has grown open (e.g. poker's raise sub-panel,
      * whose pot-fraction/slider/amount controls don't fit in the compact
      * fixed height on phones). Drops the fixed mobile height in favor of
      * growing with content — anchored at the bottom, so it grows upward and
      * over the felt/board rather than getting clipped or forcing a cramped
-     * inner scroll — gains a solid backdrop (see above) since it's now
-     * deliberately covering the felt, and raises the bar above a raised
-     * board/seat so it stays on top of whatever it now overlaps. Tapping
-     * anything outside the panel (the board included) already closes it via
-     * the existing outside-pointerdown handling below, so expanding doesn't
-     * need its own separate close affordance. False (default) keeps the
-     * compact fixed-height, see-through footprint and sits BELOW a raised
-     * board/seat instead, so anything poking down from the felt into the
-     * bar's normal small footprint still reads on top of it rather than
-     * being hidden behind it.
+     * inner scroll — and raises the bar above a raised board/seat so it
+     * stays on top of whatever it now overlaps. Tapping anything outside the
+     * panel (the board included) already closes it via the existing
+     * outside-pointerdown handling below, so expanding doesn't need its own
+     * separate close affordance. False (default) keeps the compact
+     * fixed-height footprint and sits BELOW a raised board/seat instead, so
+     * anything poking down from the felt into the bar's normal small
+     * footprint still reads on top of it rather than being hidden behind it.
      */
     expanded?: boolean;
     children: ReactNode;
   }
->(function ActionBar({ centerItems, expanded, children }, ref) {
+>(function ActionBar({ centerItems, solidBackground, expanded, children }, ref) {
   return (
     <motion.div
       ref={ref}
@@ -78,8 +83,10 @@ export const ActionBar = forwardRef<
         "fixed inset-x-0 bottom-0 flex w-full flex-col gap-1.5 p-1.5 sm:static sm:inset-auto sm:w-full sm:max-w-md sm:gap-3 sm:p-3",
         expanded ? "z-40" : "z-10",
         centerItems && "items-center",
+        solidBackground &&
+          "border-t border-white/10 bg-black/60 backdrop-blur-md sm:rounded-xl sm:border sm:bg-black/40 sm:shadow-2xl",
         expanded
-          ? "max-h-[70vh] overflow-y-auto border-t border-white/10 bg-black/60 backdrop-blur-md pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:h-auto sm:max-h-none sm:overflow-visible sm:rounded-xl sm:border sm:bg-black/40 sm:pb-3 sm:shadow-2xl"
+          ? "max-h-[70vh] overflow-y-auto pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:h-auto sm:max-h-none sm:overflow-visible sm:pb-3"
           : `${FIXED_ACTION_BAR_HEIGHT_CLASS} justify-center overflow-y-auto pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:h-auto sm:justify-start sm:overflow-visible sm:pb-3`
       )}
     >

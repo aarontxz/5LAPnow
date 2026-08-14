@@ -9,6 +9,7 @@ import { loadSession } from "@/lib/session";
 import { SeatView } from "@/components/table/SeatView";
 import { Board } from "@/components/table/Board";
 import { AnimatedNumber } from "@/components/table/AnimatedNumber";
+import { ActionBar } from "@/components/table/ActionBar";
 import { relativeSeatIndex, seatPosition, chipDirection } from "@/lib/seatLayout";
 
 function noop(): void {}
@@ -141,8 +142,22 @@ export default function HandReplayPage({ params }: { params: Promise<{ id: strin
         <p className="text-[10px] text-white/40">Replay</p>
       </div>
 
-      <div className="fixed left-1/2 top-1/2 aspect-[5/6] h-[78vh] w-auto max-w-[94vw] -translate-x-1/2 -translate-y-1/2 rounded-2xl border border-emerald-900/50 bg-gradient-to-b from-emerald-950 to-emerald-900 shadow-2xl">
-        <div className={`absolute left-1/2 top-1/2 flex -translate-x-1/2 -translate-y-1/2 flex-col items-center gap-1 sm:gap-2 ${boardRaised ? "z-30" : "z-0"}`}>
+      {/* Same felt sizing/anchor as the live table page (app/table/[id]/page.tsx)
+          — top-14 anchor with a shared, capped mobile height so it reserves
+          exactly the space the bottom ActionBar below actually takes,
+          instead of centering blind and letting that bar cover the cards. */}
+      <div className="fixed left-1/2 top-14 aspect-[5/7] h-[min(78vh,calc(100vh_-_13.5rem))] w-auto max-w-[94vw] -translate-x-1/2 rounded-2xl border border-emerald-900/50 bg-gradient-to-b from-emerald-950 to-emerald-900 shadow-2xl sm:top-1/2 sm:aspect-[5/6] sm:h-[80vh] sm:max-w-[90vw] sm:-translate-y-1/2">
+        <div
+          className={`absolute left-1/2 top-1/2 flex -translate-x-1/2 -translate-y-1/2 flex-col items-center gap-1 rounded-xl border p-1.5 transition-colors sm:gap-2 sm:p-2 ${
+            boardRaised ? "z-30 border-white/25 bg-black/50 shadow-xl" : "z-0 border-white/10 bg-black/20"
+          }`}
+          onMouseEnter={() => setBoardRaised(true)}
+          onMouseLeave={() => setBoardRaised(false)}
+          onPointerDown={(e) => {
+            if (e.pointerType === "mouse") return;
+            setBoardRaised((cur) => !cur);
+          }}
+        >
           <Board
             board={step.hand.board}
             boards={step.hand.boards}
@@ -150,8 +165,6 @@ export default function HandReplayPage({ params }: { params: Promise<{ id: strin
             rabbitBoards={step.hand.rabbitBoards}
             canRabbitHunt={canRevealRabbit && !revealing}
             onRevealRabbit={onRevealRabbit}
-            raised={boardRaised}
-            onRaisedChange={setBoardRaised}
           />
           <span className="rounded-full bg-black/40 px-3 py-1 text-xs text-white/70 sm:text-sm">
             Pot: <AnimatedNumber value={step.hand.pot} />
@@ -211,7 +224,10 @@ export default function HandReplayPage({ params }: { params: Promise<{ id: strin
         })}
       </div>
 
-      <div className="fixed bottom-0 left-0 right-0 z-20 flex flex-col items-center gap-2 bg-black/60 px-4 py-3 backdrop-blur">
+      {/* Same ActionBar every live action panel uses (see ActionBar.tsx) — the
+          fixed 10rem mobile height is exactly what the felt above reserves
+          space for, so this bar can never end up covering the cards. */}
+      <ActionBar centerItems>
         <p className="max-w-md text-center text-xs text-white/80">{step.description}</p>
         <div className="flex items-center gap-2">
           {/* Outer pair: jump to the previous/next hand entirely. */}
@@ -257,7 +273,7 @@ export default function HandReplayPage({ params }: { params: Promise<{ id: strin
           {canRevealRabbit && !revealing && " · click the empty board slots to reveal the rest"}
           {revealing && " · revealing…"}
         </p>
-      </div>
+      </ActionBar>
     </div>
   );
 }

@@ -153,7 +153,7 @@ export function ActionControls({
   }, [isMyTurn, canCheck, canCall, canBetOrRaise, onAction]);
 
   return (
-    <ActionBar ref={panelRef} expanded={raiseOpen}>
+    <ActionBar ref={panelRef} expanded={raiseOpen} solidBackground={raiseOpen}>
       <div className="flex gap-2 sm:gap-3">
         <motion.button
           whileHover={isMyTurn && canBetOrRaise ? { scale: 1.03 } : undefined}
