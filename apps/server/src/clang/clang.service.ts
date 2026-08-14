@@ -5,7 +5,7 @@ import { TableState } from "@5lapnow/game-engine";
 import { PrismaService } from "../prisma/prisma.service";
 import { TablesService } from "../tables/tables.service";
 import { GamesService } from "../games/games.service";
-import { RuntimeTable, captureStacksBefore } from "../tables/table-snapshot";
+import { RuntimeTable, captureStacksBefore, delay, AWAY_AUTO_PLAY_DELAY_MS } from "../tables/table-snapshot";
 
 /**
  * Owns the Clang round/turn state machine (via ClangEngine) while reusing
@@ -133,7 +133,7 @@ export class ClangService {
 
   /** Shared tail for every action: auto-play through any away seats, settle if the round just ended, then broadcast. */
   private async finish(tableId: string, runtime: RuntimeTable): Promise<void> {
-    this.resolveAwayTurns(runtime.table, runtime.clangRound);
+    await this.resolveAwayTurns(tableId, runtime.table, runtime.clangRound);
     await this.settleIfComplete(tableId, runtime);
     this.tablesService.notifyChanged(tableId);
   }
@@ -159,9 +159,13 @@ export class ClangService {
    * away auto-check/fold. On your turn: draw, then discard your
    * highest-value rank (Clang scores low, so this is the "least harmful to
    * hold onto" default, not an arbitrary one). On an eat decision: always
-   * decline, since passing is always legal and commits to nothing.
+   * decline, since passing is always legal and commits to nothing. Each
+   * auto-played step gets its own broadcast + AWAY_AUTO_PLAY_DELAY_MS pause
+   * (see TablesService.advanceHand's poker equivalent) so an away player's
+   * turn still reads as someone actually taking it, not everything resolving
+   * in one silent, instant jump.
    */
-  private resolveAwayTurns(table: TableState, round: ClangRoundState | null): void {
+  private async resolveAwayTurns(tableId: string, table: TableState, round: ClangRoundState | null): Promise<void> {
     if (!round) return;
     const engine = new ClangEngine();
     const isAway = (seatIndex: number) => table.seats[seatIndex]?.status === "sitting-out";
@@ -170,12 +174,16 @@ export class ClangService {
       if (round.phase === "awaiting-eat" && round.pendingEat) {
         if (!isAway(round.pendingEat.eaterSeatIndex)) break;
         engine.passEat(table, round, round.pendingEat.eaterSeatIndex);
+        this.tablesService.notifyChanged(tableId);
+        await delay(AWAY_AUTO_PLAY_DELAY_MS);
         continue;
       }
       if (round.phase === "turn" || round.phase === "instant-window") {
         const seatIndex = round.turnOrder[round.turnIndex] as number;
         if (!isAway(seatIndex)) break;
         engine.draw(table, round, seatIndex);
+        this.tablesService.notifyChanged(tableId);
+        await delay(AWAY_AUTO_PLAY_DELAY_MS);
         continue; // empty pile still moves to awaiting-discard — let the loop re-check phase
       }
       if (round.phase === "awaiting-discard") {
@@ -184,6 +192,8 @@ export class ClangService {
         const player = round.players.find((p) => p.seatIndex === seatIndex);
         if (!player || player.hand.length === 0) break;
         engine.playRank(table, round, seatIndex, this.defaultRankToPlay(player.hand));
+        this.tablesService.notifyChanged(tableId);
+        await delay(AWAY_AUTO_PLAY_DELAY_MS);
         continue;
       }
       break;

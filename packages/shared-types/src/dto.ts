@@ -99,6 +99,12 @@ export interface ClangLastEatView {
   actionIndex: number;
 }
 
+export interface ClangLastDrawView {
+  seatIndex: number;
+  /** Position of this draw in the round's action log — increments monotonically, same "paired with an index" reasoning as `ClangLastEatView.actionIndex`, so the frontend (deal-card sound, played only for the drawer's own client) can tell a genuinely new draw apart from an unrelated snapshot rebroadcast. */
+  actionIndex: number;
+}
+
 export interface ClangLastPlayView {
   seatIndex: number;
   /** How many cards were discarded in this Play (all cards of one rank at once) — the deal-card sound plays once per card. */
@@ -151,6 +157,8 @@ export interface ClangRoundView {
   pendingEat: ClangPendingEatView | null;
   /** The most recent successful Eat (any number of chained eats back), for the frontend's chip-fly/banner — null before anyone has eaten this round. */
   lastEat: ClangLastEatView | null;
+  /** The most recent card drawn (by anyone) — the deal-card sound is only ever played from this for the drawer's own client (see useClangDrawSound), never broadcast to everyone the way lastPlay is. Null before anyone has drawn this round. */
+  lastDraw: ClangLastDrawView | null;
   /** The most recent Play (a discard of one rank, any number of cards), for the deal-card sound — null before anyone has played this round. */
   lastPlay: ClangLastPlayView | null;
   players: ClangPlayerView[];

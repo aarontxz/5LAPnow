@@ -2,6 +2,7 @@
 
 import { useEffect, useRef } from "react";
 import type { Card } from "@5lapnow/cards";
+import type { PublicSeatView } from "@5lapnow/shared-types";
 import { playCardDealSound } from "@/lib/sound";
 
 /**
@@ -10,8 +11,18 @@ import { playCardDealSound } from "@/lib/sound";
  * an action-log index for draws, so the drawn card's own identity stands in
  * for one; pairing it with the round number still rules out a same-card
  * collision across rounds.
+ *
+ * `drawerSeatIndex`/`seats` silence an away seat's auto-drawn card (see
+ * CardFlipService.resolveAwayTurns) — an automatic filler move, not a real
+ * decision, so it shouldn't sound like one.
  */
-export function useCardFlipDrawSound(roundNumber: number | null, pileIndex: number | null, card: Card | null): void {
+export function useCardFlipDrawSound(
+  roundNumber: number | null,
+  pileIndex: number | null,
+  card: Card | null,
+  drawerSeatIndex: number | null,
+  seats: PublicSeatView[] | undefined
+): void {
   const lastKeyRef = useRef<string | null>(null);
 
   useEffect(() => {
@@ -19,6 +30,7 @@ export function useCardFlipDrawSound(roundNumber: number | null, pileIndex: numb
     const key = `${roundNumber}:${pileIndex}:${card.rank}:${card.suit}`;
     if (lastKeyRef.current === key) return;
     lastKeyRef.current = key;
-    playCardDealSound(1);
+    const actorIsAway = drawerSeatIndex != null && seats?.find((s) => s.seatIndex === drawerSeatIndex)?.status === "sitting-out";
+    if (!actorIsAway) playCardDealSound(1);
   }, [roundNumber, pileIndex, card?.rank, card?.suit]);
 }

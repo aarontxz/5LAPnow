@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import type { EffectiveGameConfig, SetGameConfigPayload } from "@5lapnow/shared-types";
 import { Modal } from "./Modal";
 import { api } from "@/lib/api";
@@ -39,15 +40,18 @@ export function GameSettingsModal({
   canEdit: boolean;
   onSave: (config: Omit<SetGameConfigPayload, "tableId">) => void;
 }) {
+  const router = useRouter();
   const [config, setConfig] = useState<EffectiveGameConfig | null>(null);
   const [fields, setFields] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [confirmingLeave, setConfirmingLeave] = useState(false);
 
   useEffect(() => {
     if (!open) return;
     setLoading(true);
     setError(null);
+    setConfirmingLeave(false);
     api
       .getGameConfig(tableId)
       .then((c) => {
@@ -122,6 +126,35 @@ export function GameSettingsModal({
             </button>
           </>
         )}
+
+        <div className="flex flex-col gap-2 border-t border-white/10 pt-4">
+          {!confirmingLeave ? (
+            <button
+              onClick={() => setConfirmingLeave(true)}
+              className="rounded-lg border border-white/10 py-2.5 text-sm font-medium text-white/60 transition-colors hover:border-red-400/40 hover:text-red-300"
+            >
+              Back to lobby
+            </button>
+          ) : (
+            <>
+              <p className="text-center text-xs text-white/50">Leave this table and return to the lobby?</p>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setConfirmingLeave(false)}
+                  className="flex-1 rounded-lg border border-white/10 py-2 text-sm text-white/70 hover:bg-white/5"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={() => router.push("/")}
+                  className="flex-1 rounded-lg bg-red-600 py-2 text-sm font-medium text-white hover:bg-red-500"
+                >
+                  Leave
+                </button>
+              </div>
+            </>
+          )}
+        </div>
       </div>
     </Modal>
   );

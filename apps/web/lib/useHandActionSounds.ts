@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import type { HandView } from "@5lapnow/shared-types";
+import type { HandView, PublicSeatView } from "@5lapnow/shared-types";
 import { playCardDealSound, playCheckSound, playChipsSound, playFoldSound } from "@/lib/sound";
 
 /**
@@ -13,8 +13,12 @@ import { playCardDealSound, playCheckSound, playChipsSound, playFoldSound } from
  * recent action, so at most one sound plays per render — no risk of a
  * "catch-up" flood of every action in the hand's history firing at once on
  * mount/reconnect.
+ *
+ * `seats` is used to silence an away seat's auto-checked/folded action (see
+ * TablesService.advanceHand) — it's an automatic filler move, not a real
+ * decision, so it shouldn't sound like one.
  */
-export function useHandActionSounds(hand: HandView | null): void {
+export function useHandActionSounds(hand: HandView | null, seats: PublicSeatView[] | undefined): void {
   const lastKeyRef = useRef<string | null>(null);
   const actionIndex = hand?.lastAction?.actionIndex ?? null;
   const handNumber = hand?.handNumber ?? null;
@@ -26,6 +30,10 @@ export function useHandActionSounds(hand: HandView | null): void {
     lastKeyRef.current = key;
 
     const action = hand.lastAction;
+    const actorIsAway =
+      "seatIndex" in action && seats?.find((s) => s.seatIndex === action.seatIndex)?.status === "sitting-out";
+    if (actorIsAway) return;
+
     switch (action.type) {
       case "check":
         playCheckSound();

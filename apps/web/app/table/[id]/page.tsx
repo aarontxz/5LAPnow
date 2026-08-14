@@ -29,6 +29,7 @@ import { useTurnReminderSound } from "@/lib/useTurnReminderSound";
 import { useEatSound } from "@/lib/useEatSound";
 import { useClangCalledSound } from "@/lib/useClangCalledSound";
 import { useClangPlaySound } from "@/lib/useClangPlaySound";
+import { useClangDrawSound } from "@/lib/useClangDrawSound";
 import { useCardFlipDrawSound } from "@/lib/useCardFlipDrawSound";
 import { useWinSound } from "@/lib/useWinSound";
 import { isSoundMuted, setSoundMuted, CLANG_CALLED_SOUND_MS } from "@/lib/sound";
@@ -159,7 +160,7 @@ export default function TablePage({ params }: { params: Promise<{ id: string }> 
   const isComplete = hand?.phase === "complete";
   const winners: PotShare[] = isComplete && hand?.results ? hand.results.flatMap((pot) => [...pot.hiWinners, ...pot.loWinners]) : [];
 
-  useHandActionSounds(hand);
+  useHandActionSounds(hand, snapshot?.seats);
   const [soundMuted, setSoundMutedState] = useState(false);
   useEffect(() => setSoundMutedState(isSoundMuted()), []);
   function toggleSound() {
@@ -262,11 +263,19 @@ export default function TablePage({ params }: { params: Promise<{ id: string }> 
   }, [clangLastEat?.actionIndex]);
   useEatSound(snapshot?.clangRound?.roundNumber ?? null, clangLastEat);
   useClangCalledSound(snapshot?.clangRound?.roundNumber ?? null, snapshot?.clangRound?.result ?? null);
-  useClangPlaySound(snapshot?.clangRound?.roundNumber ?? null, snapshot?.clangRound?.lastPlay ?? null);
+  useClangPlaySound(snapshot?.clangRound?.roundNumber ?? null, snapshot?.clangRound?.lastPlay ?? null, snapshot?.seats);
+  useClangDrawSound(
+    snapshot?.clangRound?.roundNumber ?? null,
+    snapshot?.clangRound?.lastDraw ?? null,
+    mySeatIndexForSound,
+    snapshot?.seats
+  );
   useCardFlipDrawSound(
     snapshot?.cardFlipRound?.roundNumber ?? null,
     snapshot?.cardFlipRound?.lastDrawPileIndex ?? null,
-    snapshot?.cardFlipRound?.lastDrawnCard ?? null
+    snapshot?.cardFlipRound?.lastDrawnCard ?? null,
+    snapshot?.cardFlipRound?.players.find((p) => p.justDrewLastCard)?.seatIndex ?? null,
+    snapshot?.seats
   );
 
   // Chat: track how many messages have been "seen" (panel open while they

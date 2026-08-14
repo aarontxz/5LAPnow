@@ -90,6 +90,21 @@ export interface RuntimeTable {
 /** Cooldown after a hand/round completes before the owner can start the next one — see TablesService.assertStartCooldownElapsed. */
 export const START_COOLDOWN_MS = 1000;
 
+export function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
+ * Pause between each individual away-seat auto-played action (poker's
+ * auto-check/fold, Clang's auto-draw/discard/pass-eat, Card Flip's
+ * auto-draw) — broadcast, then hold this long before the next one, so an
+ * away player's hand still reads as someone taking their turn beat by beat
+ * instead of the whole thing resolving in one instant, silent jump. Short
+ * enough to not meaningfully slow the table down since nobody's actually
+ * deciding anything.
+ */
+export const AWAY_AUTO_PLAY_DELAY_MS = 550;
+
 /** Captures every active, occupied seat's current stack — call right before forced bets/stakes are posted for a new hand/round. */
 export function captureStacksBefore(table: TableState): Array<{ seatIndex: number; userId: string; stack: number }> {
   return table.seats
@@ -168,6 +183,8 @@ function buildClangRoundView(round: ClangRoundState, table: TableState, viewerUs
   // last drew and is now the "current" state for everyone to see.
   const lastAction = round.actions[round.actions.length - 1];
   const justDrewSeatIndex = lastAction?.type === "draw" ? lastAction.seatIndex : null;
+  const lastDraw =
+    lastAction?.type === "draw" ? { seatIndex: lastAction.seatIndex, actionIndex: round.actions.length - 1 } : null;
   const lastPlay =
     lastAction?.type === "play"
       ? { seatIndex: lastAction.seatIndex, count: lastAction.count, actionIndex: round.actions.length - 1 }
@@ -235,6 +252,7 @@ function buildClangRoundView(round: ClangRoundState, table: TableState, viewerUs
     turnSeatIndex,
     pendingEat: round.pendingEat,
     lastEat,
+    lastDraw,
     lastPlay,
     players,
     bonusHits: round.bonusHits.map((h) => ({ seatIndex: h.seatIndex, category: h.category, payout: h.payout })),

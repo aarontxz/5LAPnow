@@ -42,16 +42,14 @@ import {
   captureStacksBefore,
   mustShowSeatsFromResults,
   START_COOLDOWN_MS,
+  delay,
+  AWAY_AUTO_PLAY_DELAY_MS,
 } from "./table-snapshot";
 import { buildPokerReplay } from "./replay/poker-replay";
 import { buildClangReplay, ClangRoundReplayRow } from "./replay/clang-replay";
 import { buildCardFlipReplay, CardFlipRoundReplayRow } from "./replay/cardflip-replay";
 
 type TableChangeListener = (tableId: string) => void;
-
-function delay(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
 
 /** Pause between streets dealt with nobody left to act on them (all-in runouts, deal-only streets) — so the reveal reads as a beat-by-beat dealer sequence instead of the whole rest of the board landing in one instant update. */
 const STREET_REVEAL_DELAY_MS = 1500;
@@ -839,7 +837,9 @@ export class TablesService implements OnModuleInit {
    * — instead of letting it appear bundled together with whatever happens
    * next. Shared by the acting player's own action (applyAction) and every
    * away seat's auto-play (advanceHand's loop below), so a street reveal
-   * gets the same beat no matter what triggered it.
+   * gets the same beat no matter what triggered it. Returns whether a street
+   * was actually dealt, so the away-play loop below knows whether this call
+   * already paced itself or still needs its own away-play pause.
    */
   private async applyHandActionWithPacing(
     tableId: string,
@@ -847,9 +847,9 @@ export class TablesService implements OnModuleInit {
     engine: DeclarativeEngine,
     seatIndex: number,
     action: PlayerAction
-  ): Promise<void> {
+  ): Promise<boolean> {
     const hand = runtime.hand;
-    if (!hand) return;
+    if (!hand) return false;
     const actionsBefore = hand.actions.length;
     engine.applyAction(runtime.table, hand, seatIndex, action);
     const dealtStreet = hand.actions.slice(actionsBefore).some((a) => a.type === "dealCommunityCards");
@@ -857,6 +857,7 @@ export class TablesService implements OnModuleInit {
       this.emitChanged(tableId);
       await delay(STREET_REVEAL_DELAY_MS);
     }
+    return dealtStreet;
   }
 
   /**
@@ -864,7 +865,11 @@ export class TablesService implements OnModuleInit {
    * player already dealt into this hand shouldn't be able to stall everyone
    * else waiting on their turn — and settles the showdown once the hand
    * reaches it. Called after every real action and at hand start, so an
-   * away player never stalls the table.
+   * away player never stalls the table. Each auto-played action gets its own
+   * broadcast + AWAY_AUTO_PLAY_DELAY_MS pause (unless it happened to deal a
+   * street, which already paced itself above) so it still reads as someone
+   * actually taking their turn — not the whole rest of an away player's hand
+   * resolving in one silent, instant jump.
    */
   private async advanceHand(tableId: string, runtime: RuntimeTable): Promise<void> {
     const hand = runtime.hand;
@@ -881,7 +886,17 @@ export class TablesService implements OnModuleInit {
     ) {
       const seatIndex = hand.bettingRound.turnSeatIndex;
       const legal = getLegalActions(runtime.table, hand, seatIndex);
-      await this.applyHandActionWithPacing(tableId, runtime, engine, seatIndex, legal.canCheck ? { type: "check" } : { type: "fold" });
+      const dealtStreet = await this.applyHandActionWithPacing(
+        tableId,
+        runtime,
+        engine,
+        seatIndex,
+        legal.canCheck ? { type: "check" } : { type: "fold" }
+      );
+      if (!dealtStreet) {
+        this.emitChanged(tableId);
+        await delay(AWAY_AUTO_PLAY_DELAY_MS);
+      }
     }
 
     // All-in runout / deal-only streets: nothing gates the pace but the

@@ -4,7 +4,7 @@ import { TableState } from "@5lapnow/game-engine";
 import { PrismaService } from "../prisma/prisma.service";
 import { TablesService } from "../tables/tables.service";
 import { GamesService } from "../games/games.service";
-import { RuntimeTable, captureStacksBefore } from "../tables/table-snapshot";
+import { RuntimeTable, captureStacksBefore, delay, AWAY_AUTO_PLAY_DELAY_MS } from "../tables/table-snapshot";
 
 /**
  * Owns the "10 Card Flip" round/turn state machine (via CardFlipEngine) while
@@ -88,7 +88,7 @@ export class CardFlipService {
 
   /** Shared tail for every action: auto-draw through any away seats, settle if the round just ended, then broadcast. */
   private async finish(tableId: string, runtime: RuntimeTable): Promise<void> {
-    this.resolveAwayTurns(runtime.table, runtime.cardFlipRound);
+    await this.resolveAwayTurns(tableId, runtime.table, runtime.cardFlipRound);
     await this.settleIfComplete(tableId, runtime);
     this.tablesService.notifyChanged(tableId);
   }
@@ -114,9 +114,12 @@ export class CardFlipService {
    * Which pile doesn't matter (each pile is just an arbitrary slice of one
    * shuffled deck — see the pile-choice discussion elsewhere), so this always
    * draws from the first non-empty one; the beat-the-leader rule itself
-   * decides whether that single draw ends their turn or forces another.
+   * decides whether that single draw ends their turn or forces another. Each
+   * auto-played draw gets its own broadcast + AWAY_AUTO_PLAY_DELAY_MS pause
+   * (see TablesService.advanceHand's poker equivalent) so it still reads as
+   * someone actually taking their turn.
    */
-  private resolveAwayTurns(table: TableState, round: CardFlipRoundState | null): void {
+  private async resolveAwayTurns(tableId: string, table: TableState, round: CardFlipRoundState | null): Promise<void> {
     if (!round) return;
     const engine = new CardFlipEngine();
     const isAway = (seatIndex: number) => table.seats[seatIndex]?.status === "sitting-out";
@@ -127,6 +130,8 @@ export class CardFlipService {
       const pileIndex = round.piles.findIndex((pile) => pile.length > 0);
       if (pileIndex === -1) break; // no cards left anywhere; let the normal draw path surface that
       engine.draw(table, round, seatIndex, pileIndex);
+      this.tablesService.notifyChanged(tableId);
+      await delay(AWAY_AUTO_PLAY_DELAY_MS);
     }
   }
 

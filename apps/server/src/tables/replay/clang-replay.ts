@@ -2,6 +2,7 @@ import type { Card } from "@5lapnow/cards";
 import type { ClangActionLogEntry } from "@5lapnow/clang-engine";
 import type {
   ClangBonusHitView,
+  ClangLastDrawView,
   ClangLastEatView,
   ClangLastPlayView,
   ClangPlayerView,
@@ -81,6 +82,7 @@ export function buildClangReplay(row: ClangRoundReplayRow): ClangReplayStep[] {
   let discardPileCount = 0;
   let topDiscard: Card[] = [];
   let lastEat: ClangLastEatView | null = null;
+  let lastDraw: ClangLastDrawView | null = null;
   let lastPlay: ClangLastPlayView | null = null;
 
   function clearJustDrew(except?: number): void {
@@ -110,6 +112,7 @@ export function buildClangReplay(row: ClangRoundReplayRow): ClangReplayStep[] {
       turnSeatIndex: null,
       pendingEat: null,
       lastEat,
+      lastDraw,
       lastPlay,
       players: playerViews,
       bonusHits: row.bonusHits,
@@ -140,6 +143,7 @@ export function buildClangReplay(row: ClangRoundReplayRow): ClangReplayStep[] {
           p.justDrewLastCard = true;
           drawPileCount = Math.max(0, drawPileCount - 1);
         }
+        lastDraw = { seatIndex: action.seatIndex, actionIndex };
         break;
       }
       case "play": {
