@@ -149,7 +149,7 @@ export default function HandReplayPage({ params }: { params: Promise<{ id: strin
       <div className="fixed left-1/2 top-14 aspect-[5/7] h-[min(78vh,calc(100vh_-_13.5rem))] w-auto max-w-[94vw] -translate-x-1/2 rounded-2xl border border-emerald-900/50 bg-gradient-to-b from-emerald-950 to-emerald-900 shadow-2xl sm:top-1/2 sm:aspect-[5/6] sm:h-[80vh] sm:max-w-[90vw] sm:-translate-y-1/2">
         <div
           className={`absolute left-1/2 top-1/2 flex -translate-x-1/2 -translate-y-1/2 flex-col items-center gap-1 rounded-xl border p-1.5 transition-colors sm:gap-2 sm:p-2 ${
-            boardRaised ? "z-30 border-white/25 bg-black/50 shadow-xl" : "z-0 border-white/10 bg-black/20"
+            boardRaised ? "z-30 border-white/25 bg-black/50 shadow-xl" : "z-10 border-white/10 bg-black/20"
           }`}
           onMouseEnter={() => setBoardRaised(true)}
           onMouseLeave={() => setBoardRaised(false)}
