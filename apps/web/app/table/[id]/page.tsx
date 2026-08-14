@@ -24,6 +24,7 @@ import { NextGamePicker } from "@/components/table/NextGamePicker";
 import { relativeSeatIndex, seatPosition, chipDirection } from "@/lib/seatLayout";
 import { cn } from "@/lib/cn";
 import { useHandActionSounds } from "@/lib/useHandActionSounds";
+import { useGameStartSound } from "@/lib/useGameStartSound";
 import { useYourTurnSound } from "@/lib/useYourTurnSound";
 import { useTurnReminderSound } from "@/lib/useTurnReminderSound";
 import { useEatSound } from "@/lib/useEatSound";
@@ -161,6 +162,7 @@ export default function TablePage({ params }: { params: Promise<{ id: string }> 
   const winners: PotShare[] = isComplete && hand?.results ? hand.results.flatMap((pot) => [...pot.hiWinners, ...pot.loWinners]) : [];
 
   useHandActionSounds(hand, snapshot?.seats);
+  useGameStartSound(hand?.handNumber ?? snapshot?.clangRound?.roundNumber ?? snapshot?.cardFlipRound?.roundNumber ?? null);
   const [soundMuted, setSoundMutedState] = useState(false);
   useEffect(() => setSoundMutedState(isSoundMuted()), []);
   function toggleSound() {
