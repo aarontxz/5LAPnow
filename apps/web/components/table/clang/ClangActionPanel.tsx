@@ -63,7 +63,7 @@ export function ClangActionPanel({
   const groups = groupByRank(hand);
 
   return (
-    <ActionBar growsOnMobile={false} bare>
+    <ActionBar centerItems>
       {(canEat || canPassEat) && (
         <div className="flex items-center gap-2">
           <span className="text-xs text-amber-300">You can eat!</span>

@@ -18,7 +18,7 @@ export function CardFlipActionPanel({
   const { canDraw } = legalActions;
 
   return (
-    <ActionBar growsOnMobile={false} bare>
+    <ActionBar centerItems>
       <span className={cn("text-xs", canDraw ? "text-emerald-300" : "text-white/40")}>
         {canDraw ? "Your turn — draw from a pile" : "Waiting for your turn…"}
       </span>

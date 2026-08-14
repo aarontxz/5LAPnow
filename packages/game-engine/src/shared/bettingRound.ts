@@ -16,6 +16,18 @@ export interface LegalActionInfo {
   canBetOrRaise: boolean;
   minRaiseTo: number;
   maxRaiseTo: number;
+  /**
+   * The true, structure-unlimited all-in "toAmount" — committedThisStreet +
+   * the player's entire remaining stack. Equals `maxRaiseTo` under no-limit
+   * (nothing else can cap it there), but under pot-limit `maxRaiseTo` may sit
+   * strictly below this when the pot cap binds before the stack does — i.e.
+   * whenever `maxRaiseTo < allInTo`, going fully all-in isn't actually a
+   * legal action; the most a player can commit is `maxRaiseTo`. Callers
+   * (e.g. an "All-in" button) should treat all-in as unavailable in that
+   * case rather than silently submitting a smaller amount under an "all-in"
+   * label.
+   */
+  allInTo: number;
 }
 
 function commitChips(seat: Seat, player: HandPlayerState, amount: number): void {
@@ -66,6 +78,7 @@ export function getLegalActions(table: TableState, hand: HandState, seatIndex: n
     canBetOrRaise: false,
     minRaiseTo: 0,
     maxRaiseTo: 0,
+    allInTo: 0,
   };
   if (!seat || !player || player.folded || player.allIn || !hand.bettingRound) return none;
 
@@ -73,10 +86,8 @@ export function getLegalActions(table: TableState, hand: HandState, seatIndex: n
   const callAmount = Math.max(0, round.currentBet - player.committedThisStreet);
   const canCheck = callAmount === 0;
   const canCall = callAmount > 0;
-  const maxRaiseTo =
-    hand.gameDefinition.bettingStructure === "pot-limit"
-      ? potLimitMaxRaiseTo(table, hand, seatIndex)
-      : player.committedThisStreet + seat.stack;
+  const allInTo = player.committedThisStreet + seat.stack;
+  const maxRaiseTo = hand.gameDefinition.bettingStructure === "pot-limit" ? potLimitMaxRaiseTo(table, hand, seatIndex) : allInTo;
   const minRaiseTo = Math.min(maxRaiseTo, round.currentBet + round.minRaiseIncrement);
   const canBetOrRaise = seat.stack > 0 && maxRaiseTo > round.currentBet;
 
@@ -88,6 +99,7 @@ export function getLegalActions(table: TableState, hand: HandState, seatIndex: n
     canBetOrRaise,
     minRaiseTo,
     maxRaiseTo,
+    allInTo,
   };
 }
 

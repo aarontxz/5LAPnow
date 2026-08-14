@@ -18,6 +18,7 @@ export function ActionControls({
   pot,
   currentBet,
   onAction,
+  onExpandedChange,
 }: {
   /** Null whenever it isn't the viewer's turn — the panel stays mounted and visible, just disabled. */
   legalActions: LegalActionInfo | null;
@@ -26,6 +27,8 @@ export function ActionControls({
   /** The highest amount committed this street by anyone — the bet/raise being faced (0 pre-flop-open). */
   currentBet: number;
   onAction: (action: PlayerAction) => void;
+  /** Mirrors whether the raise sub-panel is open — the parent page uses this to raise the panel's wrapper above a raised board/seat while it's expanded (see ActionBar's `expanded` prop doc). */
+  onExpandedChange?: (expanded: boolean) => void;
 }) {
   const isMyTurn = legalActions !== null;
   const canCheck = legalActions?.canCheck ?? false;
@@ -34,6 +37,14 @@ export function ActionControls({
   const callAmount = legalActions?.callAmount ?? 0;
   const minRaiseTo = legalActions?.minRaiseTo ?? 0;
   const maxRaiseTo = legalActions?.maxRaiseTo ?? 0;
+  const allInTo = legalActions?.allInTo ?? 0;
+  // Under pot-limit (e.g. PLO), maxRaiseTo can sit strictly below the
+  // player's true all-in amount — the pot cap binding before the stack does
+  // means committing the whole stack isn't actually a legal action, so
+  // "All-in" would silently submit a smaller (pot-capped) amount under an
+  // all-in label. Only offer it as its own action when going all-in and
+  // betting the max legal amount are genuinely the same thing.
+  const canGoAllIn = maxRaiseTo >= allInTo;
 
   // Pot-fraction preset: raise size = fraction * (pot + callAmount), matching
   // standard pot-limit sizing math (the pot as it would stand after we call).
@@ -49,6 +60,10 @@ export function ActionControls({
   const [raiseOpen, setRaiseOpen] = useState(false);
   const [raiseInput, setRaiseInput] = useState(String(minRaiseTo));
   const panelRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    onExpandedChange?.(raiseOpen);
+  }, [raiseOpen, onExpandedChange]);
 
   // Close the raise panel when the user taps outside of it.
   useEffect(() => {
@@ -88,7 +103,7 @@ export function ActionControls({
   }
 
   function submitAllIn() {
-    if (!isMyTurn || !canBetOrRaise) return;
+    if (!isMyTurn || !canBetOrRaise || !canGoAllIn) return;
     onAction({ type: canCheck ? "bet" : "raise", toAmount: maxRaiseTo });
     setRaiseOpen(false);
   }
@@ -138,7 +153,7 @@ export function ActionControls({
   }, [isMyTurn, canCheck, canCall, canBetOrRaise, onAction]);
 
   return (
-    <ActionBar ref={panelRef} growsOnMobile>
+    <ActionBar ref={panelRef} expanded={raiseOpen}>
       <div className="flex gap-2 sm:gap-3">
         <motion.button
           whileHover={isMyTurn && canBetOrRaise ? { scale: 1.03 } : undefined}
@@ -249,10 +264,12 @@ export function ActionControls({
                 {showCheck ? "Bet" : "Raise to"} {raiseInput}
               </motion.button>
               <motion.button
-                whileHover={{ scale: 1.03 }}
-                whileTap={{ scale: 0.95 }}
+                whileHover={canGoAllIn ? { scale: 1.03 } : undefined}
+                whileTap={canGoAllIn ? { scale: 0.95 } : undefined}
+                disabled={!canGoAllIn}
                 onClick={submitAllIn}
-                className="rounded-full bg-amber-600 px-3 py-2.5 text-xs font-medium text-white hover:bg-amber-500"
+                title={canGoAllIn ? undefined : "The pot cap is below your stack — the most you can legally bet is the pot-sized raise above"}
+                className="rounded-full bg-amber-600 px-3 py-2.5 text-xs font-medium text-white hover:bg-amber-500 disabled:cursor-not-allowed disabled:opacity-30 disabled:hover:bg-amber-600"
               >
                 All-in
               </motion.button>

@@ -21,7 +21,6 @@ import { LedgerModal } from "@/components/table/LedgerModal";
 import { GameSettingsModal } from "@/components/table/GameSettingsModal";
 import { ChatPanel } from "@/components/table/ChatPanel";
 import { NextGamePicker } from "@/components/table/NextGamePicker";
-import { FIXED_ACTION_BAR_RESERVE_CLASS } from "@/components/table/ActionBar";
 import { relativeSeatIndex, seatPosition, chipDirection } from "@/lib/seatLayout";
 import { cn } from "@/lib/cn";
 
@@ -60,6 +59,12 @@ export default function TablePage({ params }: { params: Promise<{ id: string }> 
   // `raised` prop doc for why this has to be lifted up here rather than kept
   // as Board's own local state.
   const [boardRaised, setBoardRaised] = useState(false);
+  // Whether poker's raise sub-panel is currently open — lifted up from
+  // ActionControls (see its onExpandedChange prop) so the action panel's own
+  // wrapper div, one level up here, can raise its z-index above a raised
+  // board/seat while expanded, and drop below them again once collapsed.
+  // Same "has to live here, not in the child" reasoning as boardRaised.
+  const [actionPanelExpanded, setActionPanelExpanded] = useState(false);
   // The viewer's own seat (always rendered at relative index 0, near the
   // felt's bottom edge) can grow taller than its neighbors — e.g. ESG's
   // 3-row card fan plus its 3-line hand-strength readout — tall enough that
@@ -424,7 +429,14 @@ export default function TablePage({ params }: { params: Promise<{ id: string }> 
     return (
       <AnimatePresence>
         {mySeat && snapshot?.handInProgress && (
-          <ActionControls key="action-controls" legalActions={legalActions} pot={hand?.pot ?? 0} currentBet={currentBet} onAction={sendAction} />
+          <ActionControls
+            key="action-controls"
+            legalActions={legalActions}
+            pot={hand?.pot ?? 0}
+            currentBet={currentBet}
+            onAction={sendAction}
+            onExpandedChange={setActionPanelExpanded}
+          />
         )}
       </AnimatePresence>
     );
@@ -434,13 +446,15 @@ export default function TablePage({ params }: { params: Promise<{ id: string }> 
     <main className="relative h-dvh w-full overflow-hidden">
       {/* Corner-docked chrome around a table that fills the screen, mirroring
           a traditional poker-room UI — viewer controls top-left, Log/Share/
-          Chat top-right, Start control + live turn actions stacked
-          bottom-right. Same layout at every breakpoint (just tighter offsets
-          on phones), so PC and phone match — and both menu buttons and the
-          own-seat controls stay up top, clear of the action panel/raise
-          slider growing at the bottom. Each corner is `fixed` and lives
-          outside the felt's own centering, so none of this ever competes
-          with the table for layout space or nudges it off-center. */}
+          Chat top-right, Start control bottom-right. Same layout at every
+          breakpoint (just tighter offsets on phones), so PC and phone match.
+          Each corner is `fixed` and lives outside the felt's own centering,
+          so none of this ever competes with the table for layout space or
+          nudges it off-center. Always above the felt (z-30, higher than
+          anything the felt itself ever reaches) since none of it ever needs
+          to trade places with a raised board/seat the way the action panel
+          below does — see that wrapper's own comment for why it's a
+          separate sibling instead of living in here too. */}
       <div className="pointer-events-none fixed inset-0 z-30">
         <div className="pointer-events-auto absolute left-2 top-2 flex max-w-[55vw] flex-wrap items-center gap-1.5 sm:left-6 sm:top-6 sm:max-w-none sm:gap-2">
           {renderSeatControls()}
@@ -458,6 +472,23 @@ export default function TablePage({ params }: { params: Promise<{ id: string }> 
         <div className="pointer-events-auto absolute inset-x-0 bottom-2 flex justify-center sm:inset-x-auto sm:bottom-6 sm:right-6 sm:justify-end">
           {renderStartControl()}
         </div>
+      </div>
+
+      {/* The action panel gets its OWN stacking context, separate from the
+          z-30 chrome above — it needs a z-index that changes at runtime
+          (see ActionBar's `expanded` prop), and nesting it inside another
+          element that already has a fixed z-index would trap that change
+          from ever actually competing against the felt's raised board/seat
+          (a positioned element with a non-auto z-index always creates a new
+          stacking context, so a descendant's own z-index only ever competes
+          within it — the exact bug Board.tsx's raise-above-seats hover once
+          hit for the same reason). Collapsed, it sits below a raised
+          board/seat (z-10, under their z-20/z-30) so anything poking down
+          from the felt into its compact footprint still shows on top of it;
+          expanded, it jumps above everything (z-40) since it's now
+          deliberately overlapping the felt and needs to stay fully usable
+          there. */}
+      <div className={cn("pointer-events-none fixed inset-0", actionPanelExpanded ? "z-40" : "z-10")}>
         <div className="pointer-events-auto absolute bottom-2 right-2 flex max-w-[92vw] flex-col items-end gap-2 sm:bottom-6 sm:right-6 sm:max-w-none">
           {renderActionPanel()}
         </div>
@@ -501,22 +532,20 @@ export default function TablePage({ params }: { params: Promise<{ id: string }> 
         </div>
       )}
 
-      {/* The felt is always fixed. No surrounding chrome is ever a
-          normal-flow sibling of it (see the corner-docked chrome above,
-          which folds the action panel into its bottom-right corner), so
-          nothing can ever nudge it off-center or compete with it for layout
-          space. Dead-centered on the viewport normally — but Clang/Card
-          Flip's action panel becomes a fixed-height (10rem) full-width bar
-          pinned to the bottom of the screen on phones (unlike poker's,
-          which never grows there), so on mobile those two reserve that
-          strip via top/bottom insets instead of centering over it. Desktop
-          never has this problem (that panel is just a small corner card
-          there), so sm+ always reverts to true centering. */}
+      {/* The felt is always fixed, and always the exact same size and
+          position regardless of game kind — poker, Clang, and Card Flip all
+          render their action panel through the same ActionBar with
+          growsOnMobile={false} (see ActionBar.tsx), so every engine reserves
+          the identical fixed-height (10rem) full-width bar pinned to the
+          bottom of the screen on phones. The felt anchors from the top
+          (`top-14`) on mobile to stay clear of that bar, with its shared
+          height capped via `min()` so it can never grow tall enough to reach
+          behind that reserved strip. Desktop never has this problem (the
+          panel is just a small corner card there), so `sm:` always reverts
+          to true centering. */}
       <div
         ref={setFeltEl}
-        className={`fixed left-1/2 aspect-[5/7] w-auto max-w-[94vw] -translate-x-1/2 rounded-2xl border border-emerald-900/50 bg-gradient-to-b from-emerald-950 to-emerald-900 shadow-2xl sm:left-1/2 sm:top-1/2 sm:aspect-[5/6] sm:h-[80vh] sm:max-w-[90vw] sm:-translate-y-1/2 sm:bottom-auto ${
-          isClang || isCardFlip ? `top-14 ${FIXED_ACTION_BAR_RESERVE_CLASS}` : "top-1/2 h-[78vh] -translate-y-1/2"
-        }`}
+        className="fixed left-1/2 top-14 aspect-[5/7] h-[min(78vh,calc(100vh_-_13.5rem))] w-auto max-w-[94vw] -translate-x-1/2 rounded-2xl border border-emerald-900/50 bg-gradient-to-b from-emerald-950 to-emerald-900 shadow-2xl sm:left-1/2 sm:top-1/2 sm:aspect-[5/6] sm:h-[80vh] sm:max-w-[90vw] sm:-translate-y-1/2 sm:bottom-auto"
       >
           <div
             className={cn(
