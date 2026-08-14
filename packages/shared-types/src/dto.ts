@@ -1,5 +1,5 @@
 import type { Card } from "@5lapnow/cards";
-import type { SeatStatus, HandPhase, PotResult, LegalActionInfo } from "@5lapnow/game-engine";
+import type { SeatStatus, HandPhase, PotResult, LegalActionInfo, HandActionLogEntry } from "@5lapnow/game-engine";
 import type { ClangHandCategory, ClangPayment, ClangPhase } from "@5lapnow/clang-engine";
 import type { CardFlipPayment, CardFlipPhase } from "@5lapnow/card-flip-engine";
 import type { TableGameKind } from "./rest.js";
@@ -64,6 +64,15 @@ export interface HandView {
   results: PotResult[] | null;
   /** Populated only for the viewer when it is their turn to act. */
   legalActions: LegalActionInfo | null;
+  /**
+   * The most recently logged entry in this hand's action log (a post/fold/
+   * check/call/bet/raise, or a card deal), paired with its position in that
+   * log — same "paired with an index" shape as `ClangLastEatView.actionIndex`
+   * — so the frontend (sound effects) can tell a genuinely new action apart
+   * from an unrelated snapshot rebroadcast of the same state. Null only
+   * before the first forced bet has posted.
+   */
+  lastAction: (HandActionLogEntry & { actionIndex: number }) | null;
 }
 
 export interface SeatRequestView {
@@ -87,6 +96,14 @@ export interface ClangLastEatView {
   /** Chips paid (eatPaymentPerCard × cards eaten) — for the chip-fly animation's label. */
   amount: number;
   /** Position of this eat in the round's action log — increments monotonically, so the frontend can tell a repeat of the same discarder/eater/rank apart from the previous one. */
+  actionIndex: number;
+}
+
+export interface ClangLastPlayView {
+  seatIndex: number;
+  /** How many cards were discarded in this Play (all cards of one rank at once) — the deal-card sound plays once per card. */
+  count: number;
+  /** Position of this play in the round's action log — same "paired with an index" reasoning as `ClangLastEatView.actionIndex`. */
   actionIndex: number;
 }
 
@@ -134,6 +151,8 @@ export interface ClangRoundView {
   pendingEat: ClangPendingEatView | null;
   /** The most recent successful Eat (any number of chained eats back), for the frontend's chip-fly/banner — null before anyone has eaten this round. */
   lastEat: ClangLastEatView | null;
+  /** The most recent Play (a discard of one rank, any number of cards), for the deal-card sound — null before anyone has played this round. */
+  lastPlay: ClangLastPlayView | null;
   players: ClangPlayerView[];
   bonusHits: ClangBonusHitView[];
   /** Populated only for the viewer when they're seated in this round. */

@@ -100,6 +100,7 @@ export function buildPokerReplay(row: PokerHandReplayRow, gameDefinition: GameDe
     // actionIndex is the index of the action just applied; slice includes it (+1) — matches
     // recentlyDealtCounts' "as of this point in the log" contract exactly.
     const dealtCounts = recentlyDealtCounts(row.actions.slice(0, actionIndex + 1));
+    const lastAction = actionIndex >= 0 ? { ...row.actions[actionIndex]!, actionIndex } : null;
 
     const playerViews: HandPlayerView[] = row.players.map((persisted) => {
       const acc = players.get(persisted.seatIndex) as PlayerAcc;
@@ -141,6 +142,7 @@ export function buildPokerReplay(row: PokerHandReplayRow, gameDefinition: GameDe
       players: playerViews,
       results: isFinalStep ? row.results : null,
       legalActions: null,
+      lastAction,
     };
   }
 

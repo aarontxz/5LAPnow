@@ -88,7 +88,7 @@ export interface RuntimeTable {
 }
 
 /** Cooldown after a hand/round completes before the owner can start the next one — see TablesService.assertStartCooldownElapsed. */
-export const START_COOLDOWN_MS = 3000;
+export const START_COOLDOWN_MS = 1000;
 
 /** Captures every active, occupied seat's current stack — call right before forced bets/stakes are posted for a new hand/round. */
 export function captureStacksBefore(table: TableState): Array<{ seatIndex: number; userId: string; stack: number }> {
@@ -168,6 +168,10 @@ function buildClangRoundView(round: ClangRoundState, table: TableState, viewerUs
   // last drew and is now the "current" state for everyone to see.
   const lastAction = round.actions[round.actions.length - 1];
   const justDrewSeatIndex = lastAction?.type === "draw" ? lastAction.seatIndex : null;
+  const lastPlay =
+    lastAction?.type === "play"
+      ? { seatIndex: lastAction.seatIndex, count: lastAction.count, actionIndex: round.actions.length - 1 }
+      : null;
   const lastEat =
     lastAction?.type === "eat"
       ? {
@@ -231,6 +235,7 @@ function buildClangRoundView(round: ClangRoundState, table: TableState, viewerUs
     turnSeatIndex,
     pendingEat: round.pendingEat,
     lastEat,
+    lastPlay,
     players,
     bonusHits: round.bonusHits.map((h) => ({ seatIndex: h.seatIndex, category: h.category, payout: h.payout })),
     legalActions,
@@ -340,6 +345,8 @@ export function buildTableSnapshot(runtime: RuntimeTable, viewerUserId: string |
       turnSeatIndex !== null && viewerSeat?.playerId === viewerUserId
         ? getLegalActions(table, hand, turnSeatIndex)
         : null;
+    const lastActionEntry = hand.actions[hand.actions.length - 1];
+    const lastAction = lastActionEntry ? { ...lastActionEntry, actionIndex: hand.actions.length - 1 } : null;
 
     handView = {
       handNumber: hand.handNumber,
@@ -355,6 +362,7 @@ export function buildTableSnapshot(runtime: RuntimeTable, viewerUserId: string |
       players,
       results: hand.results?.pots ?? null,
       legalActions,
+      lastAction,
     };
   }
 

@@ -23,6 +23,15 @@ import { ChatPanel } from "@/components/table/ChatPanel";
 import { NextGamePicker } from "@/components/table/NextGamePicker";
 import { relativeSeatIndex, seatPosition, chipDirection } from "@/lib/seatLayout";
 import { cn } from "@/lib/cn";
+import { useHandActionSounds } from "@/lib/useHandActionSounds";
+import { useYourTurnSound } from "@/lib/useYourTurnSound";
+import { useTurnReminderSound } from "@/lib/useTurnReminderSound";
+import { useEatSound } from "@/lib/useEatSound";
+import { useClangCalledSound } from "@/lib/useClangCalledSound";
+import { useClangPlaySound } from "@/lib/useClangPlaySound";
+import { useCardFlipDrawSound } from "@/lib/useCardFlipDrawSound";
+import { useWinSound } from "@/lib/useWinSound";
+import { isSoundMuted, setSoundMuted, CLANG_CALLED_SOUND_MS } from "@/lib/sound";
 
 function netForSeat(payments: Array<{ fromSeatIndex: number; toSeatIndex: number; amount: number }>, seatIndex: number): number {
   let net = 0;
@@ -150,6 +159,68 @@ export default function TablePage({ params }: { params: Promise<{ id: string }> 
   const isComplete = hand?.phase === "complete";
   const winners: PotShare[] = isComplete && hand?.results ? hand.results.flatMap((pot) => [...pot.hiWinners, ...pot.loWinners]) : [];
 
+  useHandActionSounds(hand);
+  const [soundMuted, setSoundMutedState] = useState(false);
+  useEffect(() => setSoundMutedState(isSoundMuted()), []);
+  function toggleSound() {
+    const next = !soundMuted;
+    setSoundMuted(next);
+    setSoundMutedState(next);
+  }
+  // mySeat/mySeatIndex proper are declared below the `if (!session) return
+  // null` guard — this duplicates that same seat lookup (mirroring the
+  // existing 's'-hotkey effect below, which does the same for the same
+  // reason) since hooks can't be called after a conditional return.
+  // Covers all three engines: poker's turnSeatIndex, and Clang/Card Flip's
+  // own per-viewer legalActions (turnSeatIndex alone isn't enough for Clang —
+  // "awaiting-discard"/"awaiting-eat" phases are still your turn without
+  // turnSeatIndex pointing at you, so canDraw/canPlay/canEat/canPassEat is
+  // the real "can I actually act right now" signal there).
+  const mySeatIndexForSound = snapshot?.seats.find((s) => s.playerId === session?.userId)?.seatIndex ?? null;
+  const clangLegalForSound = snapshot?.clangRound?.legalActions ?? null;
+  const cardFlipLegalForSound = snapshot?.cardFlipRound?.legalActions ?? null;
+  const isMyTurnForSound =
+    (hand?.turnSeatIndex != null && mySeatIndexForSound === hand.turnSeatIndex) ||
+    (clangLegalForSound !== null &&
+      (clangLegalForSound.canDraw || clangLegalForSound.canPlay || clangLegalForSound.canEat || clangLegalForSound.canPassEat)) ||
+    (cardFlipLegalForSound?.canDraw ?? false);
+  useYourTurnSound(isMyTurnForSound);
+  useTurnReminderSound(isMyTurnForSound);
+
+  // Win sound: fires once per completed hand/round the viewer's own seat
+  // actually gained money from — reused across all three engines by calling
+  // the hook once per engine, each independently keyed/deduped by its own
+  // hand/round number, so exactly one of the three can ever actually fire
+  // for a given table (only one engine is ever active on it).
+  const myWonPoker =
+    isComplete && hand?.results
+      ? hand.results.some((pot) =>
+          [...pot.hiWinners, ...pot.loWinners].some((w) => w.seatIndex === mySeatIndexForSound && w.amount > 0)
+        )
+      : false;
+  const clangResultForSound = snapshot?.clangRound?.result ?? null;
+  const myWonClang =
+    clangResultForSound !== null && mySeatIndexForSound !== null
+      ? netForSeat(clangResultForSound.payments, mySeatIndexForSound) > 0
+      : false;
+  const cardFlipResultForSound = snapshot?.cardFlipRound?.result ?? null;
+  const myWonCardFlip =
+    cardFlipResultForSound !== null && mySeatIndexForSound !== null
+      ? netForSeat(cardFlipResultForSound.payments, mySeatIndexForSound) > 0
+      : false;
+  useWinSound(myWonPoker, myWonPoker ? `poker:${hand?.handNumber}` : null);
+  // Only wait out clang.mp3 when the round actually ended via a call (the
+  // case useClangCalledSound plays it for) — a forced showdown (draw pile
+  // exhausted, nobody called) has no clang sound to sequence after, so a
+  // win there should play immediately instead of pointlessly delayed.
+  const clangCalledForWin = clangResultForSound?.type === "call" || clangResultForSound?.type === "instant";
+  useWinSound(
+    myWonClang,
+    myWonClang ? `clang:${snapshot?.clangRound?.roundNumber}` : null,
+    clangCalledForWin ? CLANG_CALLED_SOUND_MS : 0
+  );
+  useWinSound(myWonCardFlip, myWonCardFlip ? `cardflip:${snapshot?.cardFlipRound?.roundNumber}` : null);
+
   const [displayPot, setDisplayPot] = useState(0);
   useEffect(() => {
     if (!hand) { setDisplayPot(0); return; }
@@ -189,6 +260,14 @@ export default function TablePage({ params }: { params: Promise<{ id: string }> 
     const timer = setTimeout(() => setActiveEat(null), EAT_BANNER_MS);
     return () => clearTimeout(timer);
   }, [clangLastEat?.actionIndex]);
+  useEatSound(snapshot?.clangRound?.roundNumber ?? null, clangLastEat);
+  useClangCalledSound(snapshot?.clangRound?.roundNumber ?? null, snapshot?.clangRound?.result ?? null);
+  useClangPlaySound(snapshot?.clangRound?.roundNumber ?? null, snapshot?.clangRound?.lastPlay ?? null);
+  useCardFlipDrawSound(
+    snapshot?.cardFlipRound?.roundNumber ?? null,
+    snapshot?.cardFlipRound?.lastDrawPileIndex ?? null,
+    snapshot?.cardFlipRound?.lastDrawnCard ?? null
+  );
 
   // Chat: track how many messages have been "seen" (panel open while they
   // arrived) so the button can show an unread badge, and surface a transient
@@ -299,6 +378,15 @@ export default function TablePage({ params }: { params: Promise<{ id: string }> 
   function renderMenuButtons() {
     return (
       <>
+        <motion.button
+          whileHover={{ scale: 1.03 }}
+          whileTap={{ scale: 0.96 }}
+          onClick={toggleSound}
+          title={soundMuted ? "Unmute sound" : "Mute sound"}
+          className="flex shrink-0 items-center gap-1.5 rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-medium text-white/70 shadow-sm hover:border-white/20 hover:bg-white/10 hover:text-white sm:px-3.5 sm:py-2 sm:text-sm"
+        >
+          <span aria-hidden>{soundMuted ? "🔇" : "🔊"}</span>
+        </motion.button>
         <motion.button
           whileHover={{ scale: 1.03 }}
           whileTap={{ scale: 0.96 }}
