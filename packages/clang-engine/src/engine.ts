@@ -179,21 +179,25 @@ export class ClangEngine {
   }
 
   /**
-   * On your turn, before you may discard: draw one card from the pile. Must
-   * be the first thing you do — `playRank` then discards from this
-   * now-6-card hand, so you always get to see what you drew before choosing
-   * what to throw. If the pile is already empty, you draw nothing and throw
-   * from your current hand instead — this is the round's last possible turn:
-   * once this throw (and any resulting eat chain) resolves, the round ends
-   * (see `finishDiscarderTurn`) rather than passing to another draw.
+   * On your turn, before you may discard: draw one card from the pile if
+   * there's one left. Must be the first thing you do — `playRank` then
+   * discards from this now-6-card hand, so you always get to see what you
+   * drew before choosing what to throw. Checked AFTER the draw, not before:
+   * whoever draws the pile's actual last card still gets it (a normal
+   * draw), and it's THEIR turn — not the next player's — that becomes the
+   * round's last possible one. If the pile was already empty (nothing left
+   * for anyone), you draw nothing and throw from your current hand instead.
+   * Either way, once this throw (and any resulting eat chain) resolves, the
+   * round ends (see `finishDiscarderTurn`) rather than passing to another draw.
    */
   draw(table: TableState, round: ClangRoundState, seatIndex: number): void {
     this.requireTurn(round, seatIndex, ["turn", "instant-window"]);
     this.closeInstantClangWindow(round, seatIndex);
+    if (round.drawPile.length > 0) {
+      this.drawOne(round, seatIndex);
+    }
     if (round.drawPile.length === 0) {
       round.deckExhausted = true;
-    } else {
-      this.drawOne(round, seatIndex);
     }
     round.phase = "awaiting-discard";
   }
@@ -308,8 +312,9 @@ export class ClangEngine {
   /**
    * Advances the turn by `skipCount` positions. The discarder already drew back in `draw()`,
    * before `playRank`; skipCount encodes: 1 = no eat, N+1 = N eaters in the chain (all their
-   * turns are skipped). If this turn's draw found the pile empty (`deckExhausted`), the round
-   * instead ends right here in a forced showdown — this was the round's last possible turn.
+   * turns are skipped). If this turn's draw left the pile empty — whether it found the pile
+   * already empty, or drew the actual last card out of it (`deckExhausted`) — the round instead
+   * ends right here in a forced showdown — this was the round's last possible turn.
    */
   private finishDiscarderTurn(
     table: TableState,

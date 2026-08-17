@@ -170,7 +170,7 @@ describe("ClangEngine", () => {
     const deck = [
       card(9), card(2), card(2), card(2), card(2), // seat0: has a 9
       card(4), card(4), card(4), card(4), card(4), // seat1: no 9s
-      card(6), // seat0's draw
+      card(6), card(5), // seat0's draw, plus a spare so the pile isn't exhausted by it
     ];
     const round = engine.startRoundWithDeck(table, 1, 5, 2, deck);
 
@@ -192,7 +192,7 @@ describe("ClangEngine", () => {
       card(9), card(2), card(2), card(2), card(2), // A: has a 9
       card(9), card(9), card(3), card(3), card(3), // B: has two 9s
       card(4), card(4), card(4), card(4), card(4), // C
-      card(6), // A's draw
+      card(6), card(5), // A's draw, plus a spare so the pile isn't exhausted by it
     ];
     const round = engine.startRoundWithDeck(table, 1, 5, 2, deck);
     const before = totalChips(table);
@@ -222,7 +222,7 @@ describe("ClangEngine", () => {
     const deck = [
       card(9), card(2), card(2), card(2), card(2), // seat0
       card(9), card(3), card(3), card(3), card(3), // seat1: eligible, will decline
-      card(6), // seat0's draw
+      card(6), card(5), // seat0's draw, plus a spare so the pile isn't exhausted by it
     ];
     const round = engine.startRoundWithDeck(table, 1, 5, 2, deck);
 
@@ -264,6 +264,40 @@ describe("ClangEngine", () => {
     expect(round.result?.type).toBe("forced");
     expect(round.result?.callerSeatIndex).toBeNull();
     expect(round.result?.winnerSeatIndices).toEqual([0]); // 9 < 20
+    expect(table.seats[0]?.stack).toBe(105);
+    expect(table.seats[1]?.stack).toBe(95);
+    expect(totalChips(table)).toBe(before);
+  });
+
+  it("ends the round right after the drawer's turn when they draw the pile's actual last card, without a next-player empty draw", () => {
+    const table = buildTable(2);
+    const engine = new ClangEngine();
+    const deck = [
+      card(9), card(2), card(2), card(2), card(2), // seat0: 9+2+2+2+2=17
+      card(4), card(4), card(4), card(4), card(4), // seat1: 20
+      card(6), // the pile's one remaining card — seat0 draws it, pile empties
+    ];
+    const round = engine.startRoundWithDeck(table, 1, 5, 2, deck);
+    expect(round.drawPile).toHaveLength(1);
+    const before = totalChips(table);
+
+    // seat0 draws the actual last card — a real draw, not "drawing nothing" —
+    // but the pile is now empty, so this is still the round's last turn.
+    engine.draw(table, round, 0);
+    expect(round.players[0]?.hand).toContainEqual(card(6));
+    expect(round.drawPile).toHaveLength(0);
+    expect(round.deckExhausted).toBe(true);
+    expect(round.phase).toBe("awaiting-discard");
+
+    // seat1 holds no 2s, so no eat chain — the round force-ends right here,
+    // after seat0's own throw, instead of passing to seat1 for an empty draw.
+    engine.playRank(table, round, 0, 2);
+
+    expect(round.players[0]?.hand).toEqual([card(9), card(6)]);
+    expect(round.phase).toBe("complete");
+    expect(round.result?.type).toBe("forced");
+    expect(round.result?.callerSeatIndex).toBeNull();
+    expect(round.result?.winnerSeatIndices).toEqual([0]); // 9+6=15 < 20
     expect(table.seats[0]?.stack).toBe(105);
     expect(table.seats[1]?.stack).toBe(95);
     expect(totalChips(table)).toBe(before);
