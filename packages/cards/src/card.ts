@@ -8,6 +8,14 @@ export type Rank = (typeof RANKS)[number];
 export interface Card {
   rank: Rank;
   suit: Suit;
+  /**
+   * Which physical deck this card came from — only set when a game combines
+   * multiple decks into one shuffled pile (currently just Clang, once a
+   * round exceeds SECOND_DECK_THRESHOLD players — see clang-engine). Every
+   * single-deck game (poker, Card Flip, small Clang rounds) leaves this
+   * undefined, since rank+suit alone is already a unique identity there.
+   */
+  deckIndex?: number;
 }
 
 export const RANK_LABELS: Record<Rank, string> = {
@@ -38,7 +46,7 @@ export function cardToString(card: Card): string {
 }
 
 export function cardsEqual(a: Card, b: Card): boolean {
-  return a.rank === b.rank && a.suit === b.suit;
+  return a.rank === b.rank && a.suit === b.suit && a.deckIndex === b.deckIndex;
 }
 
 /** Highest rank first (Ace, King, ... 2), suit as a stable tiebreaker — for displaying a hand sorted instead of in deal order. */

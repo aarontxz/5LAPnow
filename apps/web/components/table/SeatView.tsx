@@ -446,8 +446,13 @@ export function SeatView({
       {handLength > 0 &&
         (() => {
           // Sorted for readability (highest rank first) instead of deal order —
-          // identity (rank+suit), not position, is what matters from here on,
-          // since a single deck never repeats a card within one hand.
+          // identity (rank+suit+deckIndex), not position, is what matters from
+          // here on. Clang can combine two 52-card decks once a round has more
+          // than SECOND_DECK_THRESHOLD players (see clang-engine), tagging
+          // every card with which deck it came from specifically so an
+          // otherwise-identical rank+suit pair from the two decks still has a
+          // unique identity here (deckIndex is undefined, and thus irrelevant,
+          // for every single-deck game).
           const sortedCards = cards ? [...cards].sort(compareCardsForDisplay) : null;
           // The newest `recentlyDealtCount` cards, in deal order — captured before
           // sorting scrambles their position, so the highlight below can still find
@@ -484,16 +489,17 @@ export function SeatView({
                   {Array.from({ length: size }).map((_, i) => {
                     const overallIndex = start + i;
                     const c = sortedCards ? sortedCards[overallIndex] : null;
-                    // Known cards: match by identity (survives the sort above). Face-down
-                    // opponent cards have no identity to match, so fall back to "one of the
-                    // last N slots" — still conveys "N cards just arrived" without claiming
-                    // to know which specific one.
+                    // Known cards: match by identity (survives the sort above — deckIndex
+                    // included, so a duplicate rank+suit from Clang's other deck doesn't
+                    // false-match). Face-down opponent cards have no identity to match, so
+                    // fall back to "one of the last N slots" — still conveys "N cards just
+                    // arrived" without claiming to know which specific one.
                     const isNewCard = c
                       ? newCards.some((n) => cardsEqual(n, c))
                       : overallIndex >= handLength - recentlyDealtCount;
                     return (
                       <motion.div
-                        key={c ? `up-${c.rank}-${c.suit}` : `down-${overallIndex}`}
+                        key={c ? `up-${c.rank}-${c.suit}-${c.deckIndex ?? 0}` : `down-${overallIndex}`}
                         animate={
                           isNewCard
                             ? { boxShadow: ["0 0 0px rgba(251,191,36,0)", "0 0 7px rgba(251,191,36,0.55)"] }

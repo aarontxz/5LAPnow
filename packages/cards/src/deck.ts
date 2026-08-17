@@ -6,6 +6,8 @@ export interface DeckOptions {
   jokers?: number;
   /** Injectable RNG for deterministic tests; defaults to secureRandom. */
   rng?: () => number;
+  /** Tags every card built by this call with `Card.deckIndex` — set only by a caller combining multiple decks into one shuffled pile (see ClangEngine.startRound), so otherwise-identical cards (same rank+suit) from different decks can still be told apart. Omit for every ordinary single-deck game. */
+  deckIndex?: number;
 }
 
 export const JOKER_RANK = 15;
@@ -14,13 +16,14 @@ export function createStandardDeck(options: DeckOptions = {}): Card[] {
   const cards: Card[] = [];
   for (const suit of SUITS) {
     for (const rank of RANKS) {
-      cards.push({ rank, suit });
+      cards.push(options.deckIndex !== undefined ? { rank, suit, deckIndex: options.deckIndex } : { rank, suit });
     }
   }
   const jokerCount = options.jokers ?? 0;
   for (let i = 0; i < jokerCount; i++) {
     // Jokers are suitless; suit is arbitrary and ignored by evaluators.
-    cards.push({ rank: JOKER_RANK as Card["rank"], suit: SUITS[i % SUITS.length] as Suit });
+    const joker = { rank: JOKER_RANK as Card["rank"], suit: SUITS[i % SUITS.length] as Suit };
+    cards.push(options.deckIndex !== undefined ? { ...joker, deckIndex: options.deckIndex } : joker);
   }
   return cards;
 }

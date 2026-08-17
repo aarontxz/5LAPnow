@@ -69,7 +69,14 @@ export class ClangEngine {
     bonusPayouts: ClangBonusPayouts = {}
   ): ClangRoundState {
     const deckCount = activeSeats(table).length > SECOND_DECK_THRESHOLD ? 2 : 1;
-    const cards = Array.from({ length: deckCount }, () => createStandardDeck({ jokers: 0 })).flat();
+    // Tag each card with which physical deck it came from only once there
+    // actually are multiple (deckCount > 1) — otherwise-identical cards
+    // (same rank+suit) can then still be told apart everywhere a Card flows
+    // to (hand rendering keys, cardsEqual). A single-deck round leaves every
+    // card's deckIndex undefined, same as any other game.
+    const cards = Array.from({ length: deckCount }, (_, deckIndex) =>
+      createStandardDeck({ jokers: 0, deckIndex: deckCount > 1 ? deckIndex : undefined })
+    ).flat();
     const deck = shuffle(cards, this.rng);
     return this.startRoundWithDeck(table, roundNumber, stake, eatPaymentPerCard, deck, bonusPayouts);
   }
