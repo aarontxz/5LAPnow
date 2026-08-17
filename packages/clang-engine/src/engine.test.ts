@@ -201,6 +201,9 @@ describe("ClangEngine", () => {
     engine.playRank(table, round, 0, 9);
     expect(round.phase).toBe("awaiting-eat");
     expect(round.pendingEat).toEqual({ discarderSeatIndex: 0, eaterSeatIndex: 1, rank: 9, chainDepth: 0 });
+    // turnIndex tracks the live decision, not just the final resolved turn —
+    // it's B's decision now, so it already points at B, not still at A.
+    expect(round.turnOrder[round.turnIndex]).toBe(1);
 
     engine.eat(table, round, 1);
 
@@ -281,8 +284,8 @@ describe("ClangEngine", () => {
     expect(round.drawPile).toHaveLength(1);
     const before = totalChips(table);
 
-    // seat0 draws the actual last card — a real draw, not "drawing nothing" —
-    // but the pile is now empty, so this is still the round's last turn.
+    // seat0 draws the actual last card — a real draw — but the pile is now
+    // empty, so this is still the round's last turn.
     engine.draw(table, round, 0);
     expect(round.players[0]?.hand).toContainEqual(card(6));
     expect(round.drawPile).toHaveLength(0);
@@ -301,6 +304,30 @@ describe("ClangEngine", () => {
     expect(table.seats[0]?.stack).toBe(105);
     expect(table.seats[1]?.stack).toBe(95);
     expect(totalChips(table)).toBe(before);
+  });
+
+  it("keeps turnIndex on the eater currently deciding through a multi-step chain, then lands on the next real turn", () => {
+    const table = buildTable(3); // turn order A(0) -> B(1) -> C(2)
+    const engine = new ClangEngine();
+    const deck = [
+      card(8), card(3), card(3), card(3), card(3), // A: throws the four 3s
+      card(3), card(7), card(7), card(7), card(7), // B: eligible eater, has a 3
+      card(3), card(6), card(6), card(6), card(6), // C: also has a 3 — chain continues
+      card(9), card(5), // A's draw, plus a spare so the pile isn't exhausted
+    ];
+    const round = engine.startRoundWithDeck(table, 1, 5, 2, deck);
+
+    engine.draw(table, round, 0);
+    engine.playRank(table, round, 0, 3);
+    expect(round.turnOrder[round.turnIndex]).toBe(1); // B's decision now
+
+    engine.eat(table, round, 1);
+    expect(round.phase).toBe("awaiting-eat"); // chain continues to C
+    expect(round.turnOrder[round.turnIndex]).toBe(2); // C's decision now
+
+    engine.eat(table, round, 2);
+    expect(round.phase).toBe("turn"); // chain can't continue back to the discarder — round moves on
+    expect(round.turnOrder[round.turnIndex]).toBe(0); // back to A for a real turn
   });
 
   it("still allows a full eat chain on the deck-exhausted final turn before the round ends", () => {

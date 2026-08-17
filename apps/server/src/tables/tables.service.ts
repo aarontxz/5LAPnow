@@ -969,8 +969,12 @@ export class TablesService implements OnModuleInit {
       }
     }
 
+    // Every occupied seat, not just "active" ones — see the identical
+    // comment in ClangService.settleIfComplete for why gating on "active"
+    // here would silently drop a just-completed hand's own payout for a
+    // seat that went away right at/before this hand's settlement.
     for (const seat of runtime.table.seats) {
-      if (seat.status === "active") {
+      if (seat.status !== "empty") {
         await this.prisma.seat.update({
           where: { tableId_seatIndex: { tableId, seatIndex: seat.seatIndex } },
           data: { stack: seat.stack },

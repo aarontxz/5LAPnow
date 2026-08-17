@@ -185,10 +185,7 @@ export class ClangEngine {
    * drew before choosing what to throw. Checked AFTER the draw, not before:
    * whoever draws the pile's actual last card still gets it (a normal
    * draw), and it's THEIR turn — not the next player's — that becomes the
-   * round's last possible one. If the pile was already empty (nothing left
-   * for anyone), you draw nothing and throw from your current hand instead.
-   * Either way, once this throw (and any resulting eat chain) resolves, the
-   * round ends (see `finishDiscarderTurn`) rather than passing to another draw.
+   * round's last possible one. 
    */
   draw(table: TableState, round: ClangRoundState, seatIndex: number): void {
     this.requireTurn(round, seatIndex, ["turn", "instant-window"]);
@@ -219,6 +216,12 @@ export class ClangEngine {
     const eaterHasMatch = eater.hand.some((c) => c.rank === rank);
 
     if (eaterHasMatch) {
+      // The eat decision is the eater's own turn now, not a suspended version
+      // of the discarder's — advancing turnIndex here (rather than leaving it
+      // on the discarder until the whole chain resolves) is what lets
+      // `turnOrder[turnIndex]` correctly point at whoever actually has a
+      // decision pending at every step, eat chains included.
+      round.turnIndex = (round.turnIndex + 1) % round.turnOrder.length;
       round.phase = "awaiting-eat";
       round.pendingEat = { discarderSeatIndex: seatIndex, eaterSeatIndex, rank, chainDepth: 0 };
       return;
@@ -256,6 +259,9 @@ export class ClangEngine {
     if (chainCanContinue) {
       const nextCandidate = this.requirePlayer(round, nextCandidateSeatIndex);
       if (nextCandidate.hand.some((c) => c.rank === rank)) {
+        // Same reasoning as playRank above: the decision has moved on to the
+        // next eater in the chain, so turnIndex moves with it.
+        round.turnIndex = nextCandidateIndex;
         round.pendingEat = { discarderSeatIndex, eaterSeatIndex: nextCandidateSeatIndex, rank, chainDepth: newDepth };
         // phase stays "awaiting-eat"
         return;
@@ -263,7 +269,9 @@ export class ClangEngine {
     }
 
     round.pendingEat = null;
-    this.finishDiscarderTurn(table, round, { skipCount: newDepth + 1 });
+    // turnIndex is already sitting on the eater who just finished the chain
+    // (advanced as we went, above) — one more step reaches whoever's next.
+    this.finishDiscarderTurn(table, round, { skipCount: 1 });
   }
 
   /** Voluntary decline of an available Eat — the decliner's own normal turn still comes up right after. */
@@ -271,10 +279,12 @@ export class ClangEngine {
     if (round.phase !== "awaiting-eat" || round.pendingEat?.eaterSeatIndex !== seatIndex) {
       throw new Error("You cannot pass right now");
     }
-    const { discarderSeatIndex, rank, chainDepth } = round.pendingEat;
+    const { rank } = round.pendingEat;
     round.actions.push({ type: "eatDeclined", seatIndex, rank });
     round.pendingEat = null;
-    this.finishDiscarderTurn(table, round, { skipCount: chainDepth + 1 });
+    // turnIndex is already sitting on the decliner (advanced when their eat
+    // window opened) — their own turn is what comes next, so it doesn't move.
+    this.finishDiscarderTurn(table, round, { skipCount: 0 });
   }
 
   /** On your turn, instead of drawing: reveal all hands, lowest total wins. Only available before you've drawn — once you draw you're committed to discarding. */
@@ -310,11 +320,18 @@ export class ClangEngine {
   }
 
   /**
-   * Advances the turn by `skipCount` positions. The discarder already drew back in `draw()`,
-   * before `playRank`; skipCount encodes: 1 = no eat, N+1 = N eaters in the chain (all their
-   * turns are skipped). If this turn's draw left the pile empty — whether it found the pile
-   * already empty, or drew the actual last card out of it (`deckExhausted`) — the round instead
-   * ends right here in a forced showdown — this was the round's last possible turn.
+   * Advances the turn by `skipCount` positions from wherever `turnIndex`
+   * currently sits. By the time this is called, `turnIndex` has already been
+   * kept in sync with whoever most recently had a live decision (the
+   * discarder during their own turn; each eater in turn during an eat chain
+   * — see `playRank`/`eat`), so callers only ever pass 1 (advance past
+   * whoever that was, to the next real turn — a normal no-eat completion, or
+   * an eat chain that just ended) or 0 (stay put — a decline, since the
+   * decliner's own turn is what comes next and `turnIndex` is already on
+   * them). If this turn's draw left the pile empty — whether it found the
+   * pile already empty, or drew the actual last card out of it
+   * (`deckExhausted`) — the round instead ends right here in a forced
+   * showdown — this was the round's last possible turn.
    */
   private finishDiscarderTurn(
     table: TableState,

@@ -214,8 +214,13 @@ function buildClangRoundView(round: ClangRoundState, table: TableState, viewerUs
 
   // "awaiting-discard" is still this seat's turn (turnIndex hasn't advanced yet — they've
   // drawn but not discarded), so it keeps the turn indicator/highlight lit the same as "turn".
+  // "awaiting-eat" is included too: ClangEngine now keeps turnIndex in sync with whoever
+  // currently has a live decision pending (the discarder, or each eater in turn through a
+  // chain — see playRank/eat in clang-engine), so it correctly points at the current eater
+  // here rather than staying frozen on the discarder — same turn-indicator/highlight
+  // treatment as a normal turn, not a separate category.
   const turnSeatIndex =
-    round.phase === "turn" || round.phase === "instant-window" || round.phase === "awaiting-discard"
+    round.phase === "turn" || round.phase === "instant-window" || round.phase === "awaiting-discard" || round.phase === "awaiting-eat"
       ? (round.turnOrder[round.turnIndex] ?? null)
       : null;
 

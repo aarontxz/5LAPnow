@@ -51,6 +51,6 @@ export function classifyHand(hand: Card[]): ClangHandCategory {
 export type ClangBonusPayouts = Partial<Record<ClangHandCategory, number>>;
 
 export const DEFAULT_BONUS_PAYOUTS: ClangBonusPayouts = {
-  fourOfAKind: 20,
-  straightFlush: 50,
+  fourOfAKind: 0,
+  straightFlush: 0,
 };

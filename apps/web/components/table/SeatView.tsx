@@ -363,17 +363,12 @@ export function SeatView({
         scale: folded ? 0.95 : 1,
         boxShadow: isTurn
           ? ["0 0 0px rgba(52,211,153,0)", "0 0 20px rgba(52,211,153,0.55)", "0 0 8px rgba(52,211,153,0.3)"]
-          : isEatCandidate
-            ? ["0 0 0px rgba(251,191,36,0)", "0 0 20px rgba(251,191,36,0.55)", "0 0 8px rgba(251,191,36,0.3)"]
-            : "0 0 0px rgba(52,211,153,0)",
+          : "0 0 0px rgba(52,211,153,0)",
       }}
       transition={{
         opacity: { duration: 0.3 },
         scale: { duration: 0.3 },
-        boxShadow:
-          isTurn || isEatCandidate
-            ? { duration: 1.4, repeat: Infinity, repeatType: "reverse", ease: "easeInOut" }
-            : { duration: 0.3 },
+        boxShadow: isTurn ? { duration: 1.4, repeat: Infinity, repeatType: "reverse", ease: "easeInOut" } : { duration: 0.3 },
       }}
       className={cn(
         SEAT_BOX,
@@ -382,9 +377,7 @@ export function SeatView({
           ? "border-amber-400 shadow-[0_0_18px_rgba(251,191,36,0.5)]"
           : isTurn
             ? "border-emerald-400"
-            : isEatCandidate
-              ? "border-amber-400"
-              : isDiscarder
+            : isDiscarder
                 ? "border-white/30"
                 : isLeader
                   ? "border-amber-400/60"

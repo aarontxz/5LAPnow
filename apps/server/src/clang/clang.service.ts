@@ -257,8 +257,15 @@ export class ClangService {
       },
     });
 
+    // Every occupied seat, not just "active" ones: applyAwayAfterRound just
+    // above already flips a "leave after this round" seat to "sitting-out"
+    // BEFORE this loop runs, so gating on "active" would silently drop the
+    // DB write for exactly the seat whose stack this round's own payout just
+    // changed — invisible until the in-memory RuntimeTable is next rebuilt
+    // from Postgres (a server restart), at which point that round's result
+    // is gone for good with no other record to recover it from.
     for (const seat of runtime.table.seats) {
-      if (seat.status === "active") {
+      if (seat.status !== "empty") {
         await this.prisma.seat.update({
           where: { tableId_seatIndex: { tableId, seatIndex: seat.seatIndex } },
           data: { stack: seat.stack },
