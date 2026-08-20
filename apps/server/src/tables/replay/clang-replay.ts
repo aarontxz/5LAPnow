@@ -56,6 +56,8 @@ function describeAction(action: ClangActionLogEntry, nameOf: (seatIndex: number)
       return `${nameOf(action.seatIndex)} calls Clang`;
     case "forcedShowdown":
       return "Deck exhausted — forced showdown";
+    case "emptyHand":
+      return `${nameOf(action.seatIndex)} plays their last card and wins!`;
   }
 }
 
@@ -177,6 +179,7 @@ export function buildClangReplay(row: ClangRoundReplayRow): ClangReplayStep[] {
       case "callClangInstant":
       case "callClang":
       case "forcedShowdown":
+      case "emptyHand":
         break;
     }
 

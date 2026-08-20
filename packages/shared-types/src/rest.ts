@@ -108,7 +108,7 @@ export interface ClangRoundLogEntry {
   stake: number;
   eatPaymentPerCard: number;
   outcome: {
-    type: "instant" | "call" | "forced";
+    type: "instant" | "call" | "forced" | "emptyHand";
     callerSeatIndex: number | null;
     winnerSeatIndices: number[];
     payments: ClangPayment[];

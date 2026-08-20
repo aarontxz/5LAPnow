@@ -122,6 +122,7 @@ export class ClangEngine {
       turnIndex: 0,
       instantClangClosedSeats: [],
       pendingEat: null,
+      emptyHandSeatIndex: null,
       deckExhausted: false,
       bonusHits,
       actions: [
@@ -189,6 +190,7 @@ export class ClangEngine {
    */
   draw(table: TableState, round: ClangRoundState, seatIndex: number): void {
     this.requireTurn(round, seatIndex, ["turn", "instant-window"]);
+    this.requireNoOutstandingInstantClang(round);
     this.closeInstantClangWindow(round, seatIndex);
     if (round.drawPile.length > 0) {
       this.drawOne(round, seatIndex);
@@ -210,6 +212,9 @@ export class ClangEngine {
     round.discardPile.push(...removed);
     round.lastDiscardCount = removed.length;
     round.actions.push({ type: "play", seatIndex, rank, count: removed.length, cards: removed });
+    if (remaining.length === 0 && round.emptyHandSeatIndex === null) {
+      round.emptyHandSeatIndex = seatIndex;
+    }
 
     const eaterSeatIndex = round.turnOrder[(round.turnIndex + 1) % round.turnOrder.length] as number;
     const eater = this.requirePlayer(round, eaterSeatIndex);
@@ -243,6 +248,9 @@ export class ClangEngine {
     eater.hand = remaining;
     round.discardPile.push(...removed);
     round.lastDiscardCount = removed.length;
+    if (remaining.length === 0 && round.emptyHandSeatIndex === null) {
+      round.emptyHandSeatIndex = seatIndex;
+    }
 
     const amount = round.eatPaymentPerCard * removed.length;
     applyPaymentsConservatively(table, round.roundNumber, [{ fromSeatIndex: discarderSeatIndex, toSeatIndex: seatIndex, amount }]);
@@ -290,6 +298,7 @@ export class ClangEngine {
   /** On your turn, instead of drawing: reveal all hands, lowest total wins. Only available before you've drawn — once you draw you're committed to discarding. */
   callClangNormal(table: TableState, round: ClangRoundState, seatIndex: number): void {
     this.requireTurn(round, seatIndex, ["turn", "instant-window"]);
+    this.requireNoOutstandingInstantClang(round);
     this.closeInstantClangWindow(round, seatIndex);
     round.actions.push({ type: "callClang", seatIndex });
     this.settleShowdown(table, round, seatIndex, "call");
@@ -303,6 +312,35 @@ export class ClangEngine {
   /** A seat's instant-Clang eligibility ends the moment they take their own first turn action. */
   private closeInstantClangWindow(round: ClangRoundState, seatIndex: number): void {
     if (!round.instantClangClosedSeats.includes(seatIndex)) round.instantClangClosedSeats.push(seatIndex);
+  }
+
+  /**
+   * Seats that still hold an uncalled instant-Clang-eligible 21 — the same
+   * set Draw and Call Clang block on (see `requireNoOutstandingInstantClang`).
+   * Exposed publicly so a caller with an away-seat auto-play loop (see
+   * ClangService.resolveAwayTurns) can call `callInstantClang` on such a
+   * seat's behalf when it's the only thing unblocking the round, rather than
+   * stalling forever behind an AFK player's natural 21.
+   */
+  outstandingInstantClangSeats(round: ClangRoundState): number[] {
+    return round.players
+      .filter((p) => !round.instantClangClosedSeats.includes(p.seatIndex) && handValue(p.hand) === INSTANT_CLANG_VALUE)
+      .map((p) => p.seatIndex);
+  }
+
+  /**
+   * Blocks Draw and Call Clang (the two ways a turn can otherwise close
+   * someone's instant-Clang window or move the round along) while any seat
+   * anywhere at the table still holds exactly 21 with their own window still
+   * open — including the seat about to act, who should be pressing Instant
+   * Clang instead. Since this always fires on the round's very first turn
+   * before anyone else gets one, blocking it here blocks the whole round:
+   * nobody can act until every outstanding instant Clang is called.
+   */
+  private requireNoOutstandingInstantClang(round: ClangRoundState): void {
+    if (this.outstandingInstantClangSeats(round).length > 0) {
+      throw new Error("A player can still call an instant Clang — wait for them to act first");
+    }
   }
 
   private requirePlayer(round: ClangRoundState, seatIndex: number): ClangPlayerState {
@@ -328,8 +366,12 @@ export class ClangEngine {
    * whoever that was, to the next real turn — a normal no-eat completion, or
    * an eat chain that just ended) or 0 (stay put — a decline, since the
    * decliner's own turn is what comes next and `turnIndex` is already on
-   * them). If this turn's draw left the pile empty — whether it found the
-   * pile already empty, or drew the actual last card out of it
+   * them). Checked first, ahead of everything else: if any seat's hand
+   * emptied out during the Play/Eat sequence that just finished (see
+   * `emptyHandSeatIndex`), the round ends right here as that seat's win —
+   * nobody gets to draw again, even if the deck was also exhausted this same
+   * turn. Otherwise, if this turn's draw left the pile empty — whether it
+   * found the pile already empty, or drew the actual last card out of it
    * (`deckExhausted`) — the round instead ends right here in a forced
    * showdown — this was the round's last possible turn.
    */
@@ -338,6 +380,10 @@ export class ClangEngine {
     round: ClangRoundState,
     opts: { skipCount: number }
   ): void {
+    if (round.emptyHandSeatIndex !== null) {
+      this.settleEmptyHandWin(table, round);
+      return;
+    }
     if (round.deckExhausted) {
       this.forcedShowdown(table, round);
       return;
@@ -368,6 +414,33 @@ export class ClangEngine {
     round.result = {
       type: "instant",
       callerSeatIndex: winnerSeatIndex,
+      winnerSeatIndices: [winnerSeatIndex],
+      payments,
+      reveal: round.players.map((p) => ({ seatIndex: p.seatIndex, hand: p.hand, value: handValue(p.hand) })),
+    };
+    round.phase = "complete";
+  }
+
+  /**
+   * Settles a round ended by a seat emptying its hand (see
+   * `emptyHandSeatIndex`) — an outright win like an instant Clang: every
+   * other seat pays the winner `stake`, with no hand-value comparison (an
+   * empty hand would trivially be the lowest anyway, but this is decided by
+   * who got there first, not by value).
+   */
+  private settleEmptyHandWin(table: TableState, round: ClangRoundState): void {
+    const winnerSeatIndex = round.emptyHandSeatIndex as number;
+    const payments: ClangPayment[] = [];
+    for (const p of round.players) {
+      if (p.seatIndex === winnerSeatIndex) continue;
+      payments.push({ fromSeatIndex: p.seatIndex, toSeatIndex: winnerSeatIndex, amount: round.stake });
+    }
+    applyPaymentsConservatively(table, round.roundNumber, payments);
+
+    round.actions.push({ type: "emptyHand", seatIndex: winnerSeatIndex });
+    round.result = {
+      type: "emptyHand",
+      callerSeatIndex: null,
       winnerSeatIndices: [winnerSeatIndex],
       payments,
       reveal: round.players.map((p) => ({ seatIndex: p.seatIndex, hand: p.hand, value: handValue(p.hand) })),

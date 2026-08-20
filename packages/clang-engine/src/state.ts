@@ -32,8 +32,8 @@ export interface ClangBonusHit {
 }
 
 export interface ClangRoundResult {
-  type: "instant" | "call" | "forced";
-  /** Null for a forced (deck-exhaustion) showdown — there's no caller to favor on ties. */
+  type: "instant" | "call" | "forced" | "emptyHand";
+  /** Null for a forced (deck-exhaustion) showdown or an emptyHand win — neither has a caller to favor on ties (an emptyHand win has no ties at all: it's decided by who emptied their hand first, not by comparing hand values). */
   callerSeatIndex: number | null;
   winnerSeatIndices: number[];
   payments: ClangPayment[];
@@ -49,7 +49,8 @@ export type ClangActionLogEntry =
   | { type: "draw"; seatIndex: number; card: Card }
   | { type: "callClangInstant"; seatIndex: number }
   | { type: "callClang"; seatIndex: number }
-  | { type: "forcedShowdown" };
+  | { type: "forcedShowdown" }
+  | { type: "emptyHand"; seatIndex: number };
 
 export interface ClangRoundState {
   roundNumber: number;
@@ -72,6 +73,13 @@ export interface ClangRoundState {
    * hasn't taken a turn yet themselves. */
   instantClangClosedSeats: number[];
   pendingEat: ClangPendingEat | null;
+  /** Set the first time any seat's hand empties out via a Play or an Eat — whichever seat
+   * does that first wins the round outright, once the eat chain that Play/Eat opened up
+   * finishes resolving (further players can still eat off it, even ones who themselves reach
+   * zero cards in the process — see `finishDiscarderTurn`). Never overwritten once set: if a
+   * later eater in the same chain also empties their hand, the round still credits the win to
+   * whoever got there first. */
+  emptyHandSeatIndex: number | null;
   /** Set once a turn's draw finds the pile empty: that seat still plays out its throw (and
    * any resulting eat chain) using its current hand, but the round ends the moment that
    * turn's discard/eat sequence finishes — no further turn ever gets to draw. */

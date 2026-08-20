@@ -11,6 +11,7 @@ const CLANG_OUTCOME_LABEL: Record<ClangRoundLogEntry["outcome"]["type"], string>
   instant: "Instant Clang (21)",
   call: "Called Clang",
   forced: "Deck exhausted — forced showdown",
+  emptyHand: "Emptied hand",
 };
 
 const CLANG_RANK_LABELS: Record<number, string> = { 11: "J", 12: "Q", 13: "K", 14: "A" };
@@ -62,6 +63,8 @@ function clangActionLabel(action: ClangActionLogEntry, players: ClangRoundLogEnt
       return `${name(action.seatIndex)} calls Clang`;
     case "forcedShowdown":
       return "Draw pile exhausted — forced showdown";
+    case "emptyHand":
+      return `${name(action.seatIndex)} plays their last card and wins!`;
   }
 }
 

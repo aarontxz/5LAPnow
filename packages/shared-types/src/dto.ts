@@ -114,7 +114,7 @@ export interface ClangLastPlayView {
 }
 
 export interface ClangResultView {
-  type: "instant" | "call" | "forced";
+  type: "instant" | "call" | "forced" | "emptyHand";
   callerSeatIndex: number | null;
   winnerSeatIndices: number[];
   payments: ClangPayment[];

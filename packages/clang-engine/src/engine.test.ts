@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { Card } from "@5lapnow/cards";
 import { createEmptyTable, seatPlayer, TableConfig, TableState } from "@5lapnow/game-engine";
 import { ClangEngine } from "./engine.js";
+import { handValue } from "./scoring.js";
 
 // Deterministic PRNG so shuffles are reproducible across test runs (same helper as packages/game-engine).
 function mulberry32(seed: number): () => number {
@@ -93,24 +94,24 @@ describe("ClangEngine", () => {
     expect(round.result?.callerSeatIndex).toBe(0);
   });
 
-  it("keeps a seat's instant-Clang window open until their own first turn, even after an earlier seat has already acted", () => {
+  it("blocks the first player's draw while another seat still holds an uncalled 21, and lets that seat's instant Clang go through instead", () => {
     const table = buildTable(3); // turn order 0 -> 1 -> 2
     const engine = new ClangEngine();
     const deck = [
-      card(4), card(4), card(4), card(4), card(4), // seat0: 20, draws first
+      card(4), card(4), card(4), card(4), card(4), // seat0: 20, would draw first
       card(5), card(5), card(5), card(3), card(3), // seat1: 21, hasn't acted yet
       card(9), card(9), card(9), card(9), card(9), // seat2: 45
-      card(6), // seat0's draw
+      card(6), // seat0's draw, if it were ever allowed
     ];
     const round = engine.startRoundWithDeck(table, 1, 5, 2, deck);
 
-    // Seat0 (first in turn order) takes their turn — this used to close the
-    // global instant-Clang window for every other seat too.
-    engine.draw(table, round, 0);
-    expect(round.phase).toBe("awaiting-discard");
+    // Seat0 is first in turn order, but seat1 still has an uncalled 21 out
+    // there — nobody gets to draw (or Call Clang) until that's resolved.
+    expect(() => engine.draw(table, round, 0)).toThrow();
+    expect(round.phase).toBe("instant-window");
 
-    // Seat1 hasn't had their own first turn yet, so they should still be able
-    // to call an instant Clang on their 21.
+    // Seat1 hasn't had their own first turn yet, so they can still call an
+    // instant Clang on their 21 — which is exactly what resolves the block.
     engine.callInstantClang(table, round, 1);
 
     expect(round.phase).toBe("complete");
@@ -118,17 +119,18 @@ describe("ClangEngine", () => {
     expect(round.result?.winnerSeatIndices).toEqual([1]);
   });
 
-  it("closes a seat's own instant-Clang window once they've taken their first turn", () => {
+  it("closes a seat's own instant-Clang window once they've taken their first turn, even if drawing lands them on 21", () => {
     const table = buildTable(2);
     const engine = new ClangEngine();
     const deck = [
-      card(9), card(3), card(3), card(3), card(3), // seat0: 21 after drawing away from it, but acted already
+      card(9), card(2), card(2), card(2), card(2), // seat0: 17, not yet eligible — draw is allowed
       card(2), card(2), card(2), card(2), card(2), // seat1: 10
-      card(4), // seat0's draw
+      card(4), // seat0's draw — lands them on exactly 21, but too late
     ];
     const round = engine.startRoundWithDeck(table, 1, 5, 2, deck);
 
     engine.draw(table, round, 0);
+    expect(handValue(round.players[0]?.hand ?? [])).toBe(21);
     expect(() => engine.callInstantClang(table, round, 0)).toThrow();
   });
 
@@ -151,6 +153,36 @@ describe("ClangEngine", () => {
     // Seat1 never had their own first turn, but eating is itself an action —
     // their instant-Clang shot on the resulting 21 should already be gone.
     expect(() => engine.callInstantClang(table, round, 1)).toThrow();
+  });
+
+  it("blocks Call Clang the same way it blocks Draw, while a 21 is still outstanding", () => {
+    const table = buildTable(2);
+    const engine = new ClangEngine();
+    const deck = [
+      card(4), card(4), card(4), card(4), card(4), // seat0: 20
+      card(5), card(5), card(5), card(3), card(3), // seat1: 21, hasn't acted
+    ];
+    const round = engine.startRoundWithDeck(table, 1, 5, 2, deck);
+
+    expect(() => engine.callClangNormal(table, round, 0)).toThrow();
+    expect(round.phase).toBe("instant-window");
+
+    engine.callInstantClang(table, round, 1);
+    expect(round.result?.winnerSeatIndices).toEqual([1]);
+  });
+
+  it("blocks a seat's own Draw when their own dealt hand is already 21, instead of letting them play past it", () => {
+    const table = buildTable(2);
+    const engine = new ClangEngine();
+    const deck = [
+      card(9), card(3), card(3), card(3), card(3), // seat0: 21 already, from the deal
+      card(2), card(2), card(2), card(2), card(2), // seat1: 10
+    ];
+    const round = engine.startRoundWithDeck(table, 1, 5, 2, deck);
+
+    expect(() => engine.draw(table, round, 0)).toThrow();
+    engine.callInstantClang(table, round, 0);
+    expect(round.result?.winnerSeatIndices).toEqual([0]);
   });
 
   it("rejects an instant Clang call from a hand that isn't exactly 21", () => {
@@ -224,7 +256,7 @@ describe("ClangEngine", () => {
     const engine = new ClangEngine();
     const deck = [
       card(9), card(2), card(2), card(2), card(2), // seat0
-      card(9), card(3), card(3), card(3), card(3), // seat1: eligible, will decline
+      card(9), card(4), card(4), card(4), card(4), // seat1: eligible, will decline
       card(6), card(5), // seat0's draw, plus a spare so the pile isn't exhausted by it
     ];
     const round = engine.startRoundWithDeck(table, 1, 5, 2, deck);
@@ -422,6 +454,87 @@ describe("ClangEngine", () => {
     expect(s1 + s2).toBe(100 + 100 + 15);
     expect(Math.abs(s1 - s2)).toBeLessThanOrEqual(1); // 15 split 2 ways: 7/8
     expect(totalChips(table)).toBe(before);
+  });
+
+  it("ends the round the moment a play empties the discarder's hand and there's no eligible eater", () => {
+    const table = buildTable(2);
+    const engine = new ClangEngine();
+    const deck = [
+      card(9), card(9), card(9), card(9), card(9), // seat0: all 9s
+      card(4), card(4), card(4), card(4), card(4), // seat1: no 9s, can't eat
+      card(6), card(9), // seat0's draw (a 9, so the whole 6-card hand matches), plus a spare
+    ];
+    const round = engine.startRoundWithDeck(table, 1, 5, 2, deck);
+    const before = totalChips(table);
+
+    engine.draw(table, round, 0);
+    engine.playRank(table, round, 0, 9);
+
+    expect(round.players[0]?.hand).toEqual([]);
+    expect(round.phase).toBe("complete");
+    expect(round.result?.type).toBe("emptyHand");
+    expect(round.result?.callerSeatIndex).toBeNull();
+    expect(round.result?.winnerSeatIndices).toEqual([0]);
+    expect(table.seats[0]?.stack).toBe(105);
+    expect(table.seats[1]?.stack).toBe(95);
+    expect(totalChips(table)).toBe(before);
+  });
+
+  it("credits the win to whoever emptied their hand first, even if a later eater in the same chain also empties theirs", () => {
+    const table = buildTable(3); // turn order A(0) -> B(1) -> C(2)
+    const engine = new ClangEngine();
+    const deck = [
+      card(9), card(9), card(9), card(9), card(9), // A: all 9s, empties first
+      card(9), card(9), card(9), card(9), card(9), // B: all 9s too — eating empties B's hand as well
+      card(9), card(7), card(7), card(7), card(7), // C: one 9 — chain reaches C, doesn't empty
+      card(6), card(9), // A's draw (a 9), plus a spare
+    ];
+    const round = engine.startRoundWithDeck(table, 1, 5, 2, deck);
+    const before = totalChips(table);
+
+    engine.draw(table, round, 0);
+    engine.playRank(table, round, 0, 9);
+    expect(round.phase).toBe("awaiting-eat");
+
+    engine.eat(table, round, 1); // B eats all 5, also hits zero — shouldn't steal the win
+    expect(round.phase).toBe("awaiting-eat"); // chain still continues to C
+    expect(round.players[1]?.hand).toEqual([]);
+    expect(round.result).toBeNull();
+
+    engine.eat(table, round, 2); // C eats the one 9, chain can't continue back to A (the discarder)
+
+    expect(round.players[0]?.hand).toEqual([]);
+    expect(round.players[2]?.hand).toEqual([card(7), card(7), card(7), card(7)]);
+    expect(round.phase).toBe("complete");
+    expect(round.result?.type).toBe("emptyHand");
+    expect(round.result?.callerSeatIndex).toBeNull();
+    expect(round.result?.winnerSeatIndices).toEqual([0]); // A, not B, despite B also reaching zero
+    expect(table.seats[0]?.stack).toBe(98); // -10 (B's eat) -2 (C's eat) +5 +5 (empty-hand win)
+    expect(table.seats[1]?.stack).toBe(105); // +10 (ate 5 cards) -5 (pays the winner)
+    expect(table.seats[2]?.stack).toBe(97); // +2 (ate 1 card) -5 (pays the winner)
+    expect(totalChips(table)).toBe(before);
+  });
+
+  it("a declined Eat still ends the round in the empty-handed discarder's favor, instead of letting the decliner take a normal turn", () => {
+    const table = buildTable(2);
+    const engine = new ClangEngine();
+    const deck = [
+      card(9), card(9), card(9), card(9), card(9), // seat0: all 9s
+      card(9), card(4), card(4), card(4), card(4), // seat1: eligible to eat, will decline
+      card(6), card(9), // seat0's draw (a 9), plus a spare
+    ];
+    const round = engine.startRoundWithDeck(table, 1, 5, 2, deck);
+
+    engine.draw(table, round, 0);
+    engine.playRank(table, round, 0, 9);
+    expect(round.phase).toBe("awaiting-eat");
+
+    engine.passEat(table, round, 1);
+
+    expect(round.phase).toBe("complete");
+    expect(round.result?.type).toBe("emptyHand");
+    expect(round.result?.winnerSeatIndices).toEqual([0]);
+    expect(round.players[1]?.hand).toEqual([card(9), card(4), card(4), card(4), card(4)]); // unchanged — they declined
   });
 
   it("rejects illegal actions: out of turn, discarding an unheld rank, acting without a pending Eat", () => {

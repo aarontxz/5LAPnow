@@ -212,11 +212,15 @@ export default function TablePage({ params }: { params: Promise<{ id: string }> 
       ? netForSeat(cardFlipResultForSound.payments, mySeatIndexForSound) > 0
       : false;
   useWinSound(myWonPoker, myWonPoker ? `poker:${hand?.handNumber}` : null);
-  // Only wait out clang.mp3 when the round actually ended via a call (the
-  // case useClangCalledSound plays it for) — a forced showdown (draw pile
-  // exhausted, nobody called) has no clang sound to sequence after, so a
-  // win there should play immediately instead of pointlessly delayed.
-  const clangCalledForWin = clangResultForSound?.type === "call" || clangResultForSound?.type === "instant";
+  // Only wait out clang.mp3 when the round actually ended via a decisive
+  // win (the case useClangCalledSound plays it for) — a forced showdown
+  // (draw pile exhausted, nobody called) has no clang sound to sequence
+  // after, so a win there should play immediately instead of pointlessly
+  // delayed.
+  const clangCalledForWin =
+    clangResultForSound?.type === "call" ||
+    clangResultForSound?.type === "instant" ||
+    clangResultForSound?.type === "emptyHand";
   useWinSound(
     myWonClang,
     myWonClang ? `clang:${snapshot?.clangRound?.roundNumber}` : null,

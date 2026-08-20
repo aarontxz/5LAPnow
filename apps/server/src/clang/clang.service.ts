@@ -179,6 +179,22 @@ export class ClangService {
         continue;
       }
       if (round.phase === "turn" || round.phase === "instant-window") {
+        // Draw is blocked table-wide while anyone still holds an uncalled 21
+        // (see ClangEngine.requireNoOutstandingInstantClang) — an away holder
+        // of that 21 would otherwise stall the round forever, since nothing
+        // else in this loop ever calls Instant Clang for them. Auto-call it
+        // on their behalf, same spirit as auto-drawing/auto-declining below.
+        // If it's a present player holding it instead, this loop can't do
+        // anything but wait for them.
+        const outstanding = engine.outstandingInstantClangSeats(round);
+        if (outstanding.length > 0) {
+          const awayHolder = outstanding.find(isAway);
+          if (awayHolder === undefined) break;
+          engine.callInstantClang(table, round, awayHolder);
+          this.tablesService.notifyChanged(tableId);
+          await delay(AWAY_AUTO_PLAY_DELAY_MS);
+          continue;
+        }
         const seatIndex = round.turnOrder[round.turnIndex] as number;
         if (!isAway(seatIndex)) break;
         engine.draw(table, round, seatIndex);
