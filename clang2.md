@@ -28,9 +28,9 @@ On your turn, choose one of the following:
 
 ### 1. Play
 
+* Draw **1 card**.
 * Discard **all cards of one rank** from your hand.
 * Before you draw, the next player may choose to **Eat** (see below).
-* Draw **1 card**.
 * Turn ends.
 
 ### 2. Call Clang
