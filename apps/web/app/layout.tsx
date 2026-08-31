@@ -13,7 +13,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "5LAPnow",
+  title: "Gambonow",
   description: "A multi-variant poker platform: hardcoded and AI-generated games on one shared table engine.",
 };
 
