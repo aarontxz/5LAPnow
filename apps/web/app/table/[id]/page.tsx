@@ -58,6 +58,7 @@ export default function TablePage({ params }: { params: Promise<{ id: string }> 
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [chatOpen, setChatOpen] = useState(false);
   const [linkCopied, setLinkCopied] = useState(false);
+  const [inviteHintDismissed, setInviteHintDismissed] = useState(false);
   const [games, setGames] = useState<Array<{ id: string; name: string; description: string; engine: "poker" | "clang" | "cardflip" }>>([]);
   // Seats near each other can overlap on small screens (SeatView's width/hand-fan
   // grows past the felt's per-seat spacing) — raising one above its neighbors on
@@ -382,8 +383,15 @@ export default function TablePage({ params }: { params: Promise<{ id: string }> 
       document.body.removeChild(textarea);
     }
     setLinkCopied(true);
+    setInviteHintDismissed(true);
     setTimeout(() => setLinkCopied(false), 1500);
   }
+
+  // Guide a host who just sat down alone toward the invite link — otherwise
+  // the only way to learn a table needs sharing is to already know that.
+  // Clears itself the moment someone else joins, a hand starts, the host
+  // dismisses it, or the host actually uses the Share button.
+  const showInviteHint = isOwner && activeSeats === 1 && !anyRoundActive && !inviteHintDismissed;
 
   // Rendered in two places at once (mobile in-flow header/footer vs. desktop
   // fixed corners below) — pulled into functions instead of duplicating JSX
@@ -409,21 +417,49 @@ export default function TablePage({ params }: { params: Promise<{ id: string }> 
           className="flex shrink-0 items-center gap-1.5 rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-medium text-white/70 shadow-sm hover:border-white/20 hover:bg-white/10 hover:text-white sm:px-3.5 sm:py-2 sm:text-sm"
         >
           <span aria-hidden>📒</span>
-          Ledger
+          <span className="hidden sm:inline">Ledger</span>
         </motion.button>
-        <motion.button
-          whileHover={{ scale: 1.03 }}
-          whileTap={{ scale: 0.96 }}
-          onClick={copyShareLink}
-          className={`flex shrink-0 items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium shadow-sm transition-colors sm:px-3.5 sm:py-2 sm:text-sm ${
-            linkCopied
-              ? "border-emerald-400/50 bg-emerald-400/10 text-emerald-300"
-              : "border-white/10 bg-white/5 text-white/70 hover:border-white/20 hover:bg-white/10 hover:text-white"
-          }`}
-        >
-          <span aria-hidden>{linkCopied ? "" : "🔗"}</span>
-          {linkCopied ? "Copied!" : "Share"}
-        </motion.button>
+        <div className="relative shrink-0">
+          <motion.button
+            whileHover={{ scale: 1.03 }}
+            whileTap={{ scale: 0.96 }}
+            onClick={copyShareLink}
+            className={`flex shrink-0 items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium shadow-sm transition-colors sm:px-3.5 sm:py-2 sm:text-sm ${
+              linkCopied
+                ? "border-emerald-400/50 bg-emerald-400/10 text-emerald-300"
+                : "border-white/10 bg-white/5 text-white/70 hover:border-white/20 hover:bg-white/10 hover:text-white"
+            }`}
+          >
+            <span aria-hidden>{linkCopied ? "✅" : "🔗"}</span>
+            <span className="hidden sm:inline">{linkCopied ? "Copied!" : "Share"}</span>
+          </motion.button>
+          <AnimatePresence>
+            {showInviteHint && (
+              <motion.div
+                key="invite-hint"
+                initial={{ opacity: 0, y: -6, scale: 0.95 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                exit={{ opacity: 0, y: -6, scale: 0.95 }}
+                transition={{ duration: 0.2 }}
+                onClick={copyShareLink}
+                className="pointer-events-auto absolute right-0 top-full z-10 mt-2 w-44 cursor-pointer rounded-xl border border-purple-400/40 bg-purple-950/95 px-3 py-2 text-xs text-purple-100 shadow-lg"
+              >
+                <div className="absolute -top-1.5 right-4 h-3 w-3 rotate-45 border-l border-t border-purple-400/40 bg-purple-950/95" />
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setInviteHintDismissed(true);
+                  }}
+                  aria-label="Dismiss"
+                  className="absolute right-1 top-1 flex h-4 w-4 items-center justify-center rounded-full text-purple-300/70 hover:text-purple-100"
+                >
+                  ×
+                </button>
+                Click here to copy a link to invite friends to your table
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
         <motion.button
           whileHover={{ scale: 1.03 }}
           whileTap={{ scale: 0.96 }}
@@ -431,7 +467,7 @@ export default function TablePage({ params }: { params: Promise<{ id: string }> 
           className="relative flex shrink-0 items-center gap-1.5 rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-medium text-white/70 shadow-sm hover:border-white/20 hover:bg-white/10 hover:text-white sm:px-3.5 sm:py-2 sm:text-sm"
         >
           <span aria-hidden>💬</span>
-          Chat
+          <span className="hidden sm:inline">Chat</span>
           {unreadChatCount > 0 && (
             <span className="absolute -right-1.5 -top-1.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-purple-500 px-1 text-[9px] font-bold text-white">
               {unreadChatCount}
