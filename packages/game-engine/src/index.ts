@@ -10,3 +10,4 @@ export { NO_LIMIT_TEXAS_HOLDEM } from "./games/NLH.js";
 export { DOUBLE_BOARD_BOMB_POT } from "./games/DoubleBoardBombPot.js";
 export { TRIPLE_BOARD_BOMB_POT } from "./games/TripleBoardBombPot.js";
 export { ESG } from "./games/ESG.js";
+export { POT_LIMIT_OMAHA } from "./games/PLO.js";

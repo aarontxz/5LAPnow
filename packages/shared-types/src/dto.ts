@@ -1,5 +1,5 @@
 import type { Card } from "@5lapnow/cards";
-import type { SeatStatus, HandPhase, PotResult, LegalActionInfo, HandActionLogEntry } from "@5lapnow/game-engine";
+import type { SeatStatus, HandPhase, PotResult, PotShare, LegalActionInfo, HandActionLogEntry } from "@5lapnow/game-engine";
 import type { ClangHandCategory, ClangPayment, ClangPhase } from "@5lapnow/clang-engine";
 import type { CardFlipPayment, CardFlipPhase } from "@5lapnow/card-flip-engine";
 import type { TableGameKind } from "./rest.js";
@@ -62,6 +62,8 @@ export interface HandView {
   turnSeatIndex: number | null;
   players: HandPlayerView[];
   results: PotResult[] | null;
+  /** A `GameDefinition.bounty` payout for this hand, if the game defines one and a winner qualified — a side-payment on top of `results`, not part of it. */
+  bounty: PotShare | null;
   /** Populated only for the viewer when it is their turn to act. */
   legalActions: LegalActionInfo | null;
   /**

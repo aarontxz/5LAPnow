@@ -61,6 +61,15 @@ export interface ShowdownResult {
   revealedSeats: number[];
   /** Seats that had to show their cards because they were eligible in a pot contested by more than one player. Everyone else won every pot they were eligible for uncontested and may choose to voluntarily reveal instead. */
   mustShowSeats: number[];
+  /**
+   * A `GameDefinition.bounty` payout, if the game defines one and a pot
+   * winner qualified this hand — a direct side-payment from every other
+   * dealt-in seat, not a share of `pots` (which is already money that was
+   * collected from stacks during betting; this is not, so it's kept
+   * separate to preserve `sum(pots[].amount) === total contributed` as an
+   * invariant callers can still rely on).
+   */
+  bounty: PotShare | null;
 }
 
 /** `"post"` covers antes/blinds; the rest mirror `PlayerAction["type"]` from bettingRound.ts. */

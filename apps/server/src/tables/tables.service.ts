@@ -3,12 +3,14 @@ import { randomUUID } from "node:crypto";
 import {
   computeRabbitReveal,
   createEmptyTable,
+  dealsTwoHoleCards,
   DeclarativeEngine,
   GameDefinition,
   getLegalActions,
   HandActionLogEntry,
   PlayerAction,
   PotResult,
+  PotShare,
   RabbitReveal,
   seatPlayer,
   standPlayer,
@@ -27,6 +29,7 @@ import type {
   HandLogPlayer,
   HandReplayResponse,
   PlayerLedgerEntry,
+  PokerConfigOverride,
   SetGameConfigPayload,
   TableGameConfigOverrides,
   TableLedgerResponse,
@@ -53,6 +56,37 @@ type TableChangeListener = (tableId: string) => void;
 
 /** Pause between streets dealt with nobody left to act on them (all-in runouts, deal-only streets) — so the reveal reads as a beat-by-beat dealer sequence instead of the whole rest of the board landing in one instant update. */
 const STREET_REVEAL_DELAY_MS = 1500;
+
+/** The 2-7 combo the table-level bounty option pays out on — see PokerConfigOverride.bountyEnabled. */
+const BOUNTY_RANKS: [number, number] = [2, 7];
+
+/**
+ * Layers a table owner's poker Settings onto the GameDefinition for one hand:
+ * blind/ante values, plus the 2-7 bounty toggle. Never mutates the passed-in
+ * definition — builtin rows like NLH are shared across every table playing
+ * them (see TablesService.setGameConfig).
+ *
+ * The bounty is a table option rather than a game, so it layers onto whatever
+ * poker variant is being played; it's skipped for games that don't deal
+ * exactly two hole cards, since the combo is unmakeable there (Omaha's
+ * four-card hand can hold a 2 and a 7 but is never *just* a 2 and a 7).
+ * An explicit `bountyEnabled: false` also strips a bounty the definition
+ * itself declared, so the toggle turns the feature off as well as on.
+ */
+function applyPokerOverride(def: GameDefinition, override: PokerConfigOverride | undefined): GameDefinition {
+  if (!override) return def;
+  const { bountyEnabled, bountyPayoutPerOpponent, ...forcedBetOverrides } = override;
+  const merged: GameDefinition = { ...def, forcedBets: { ...def.forcedBets, ...forcedBetOverrides } };
+  if (bountyEnabled === undefined) return merged;
+  if (!bountyEnabled || !dealsTwoHoleCards(merged)) return { ...merged, bounty: undefined };
+  return {
+    ...merged,
+    bounty: {
+      ranks: BOUNTY_RANKS,
+      payoutPerOpponent: bountyPayoutPerOpponent ?? def.bounty?.payoutPerOpponent ?? merged.forcedBets.bigBlind,
+    },
+  };
+}
 
 @Injectable()
 export class TablesService implements OnModuleInit {
@@ -598,10 +632,7 @@ export class TablesService implements OnModuleInit {
     const baseGameDefinition = await this.gamesService.getDefinition(targetGameDefinitionId);
     // Owner's Settings override (blinds/ante) layered on top — never mutates the
     // (globally shared) GameDefinition row itself, see TablesService.setGameConfig.
-    const pokerOverride = runtime.gameConfigOverrides.poker;
-    const gameDefinition = pokerOverride
-      ? { ...baseGameDefinition, forcedBets: { ...baseGameDefinition.forcedBets, ...pokerOverride } }
-      : baseGameDefinition;
+    const gameDefinition = applyPokerOverride(baseGameDefinition, runtime.gameConfigOverrides.poker);
 
     if (runtime.gameKind !== "poker" || gameDefinition.id !== runtime.gameDefinitionId) {
       runtime.gameKind = "poker";
@@ -652,11 +683,18 @@ export class TablesService implements OnModuleInit {
     if (row.engine === "poker") {
       const def = await this.gamesService.getDefinition(targetId);
       const o = overrides.poker ?? {};
+      const bigBlind = o.bigBlind ?? def.forcedBets.bigBlind;
       return {
         kind: "poker",
         smallBlind: o.smallBlind ?? def.forcedBets.smallBlind,
-        bigBlind: o.bigBlind ?? def.forcedBets.bigBlind,
+        bigBlind,
         ante: o.ante ?? def.forcedBets.ante,
+        bountyAvailable: dealsTwoHoleCards(def),
+        bountyEnabled: o.bountyEnabled ?? def.bounty !== undefined,
+        // Defaults to one big blind per opponent, which is what makes the
+        // bounty feel like a blind-sized bonus at any stake rather than a
+        // fixed number that's trivial at high stakes and brutal at low ones.
+        bountyPayoutPerOpponent: o.bountyPayoutPerOpponent ?? def.bounty?.payoutPerOpponent ?? bigBlind,
       };
     }
     if (row.engine === "clang") {
@@ -704,6 +742,8 @@ export class TablesService implements OnModuleInit {
         smallBlind: this.validatedNonNegative("smallBlind", payload.smallBlind),
         bigBlind: this.validatedNonNegative("bigBlind", payload.bigBlind),
         ante: this.validatedNonNegative("ante", payload.ante),
+        bountyEnabled: payload.bountyEnabled,
+        bountyPayoutPerOpponent: this.validatedNonNegative("bountyPayoutPerOpponent", payload.bountyPayoutPerOpponent),
       };
     } else if (row.engine === "clang") {
       overrides.clang = {
@@ -912,11 +952,11 @@ export class TablesService implements OnModuleInit {
 
     if (hand.phase === "showdown") {
       const result = engine.evaluateShowdown(runtime.table, hand);
-      await this.persistHandResult(tableId, runtime, result.pots);
+      await this.persistHandResult(tableId, runtime, result.pots, result.bounty);
     }
   }
 
-  private async persistHandResult(tableId: string, runtime: RuntimeTable, pots: PotResult[]): Promise<void> {
+  private async persistHandResult(tableId: string, runtime: RuntimeTable, pots: PotResult[], bounty: PotShare | null): Promise<void> {
     const hand = runtime.hand;
     if (!hand || !runtime.gameDefinition) return;
     runtime.roundEndedAt = Date.now();
@@ -953,6 +993,7 @@ export class TablesService implements OnModuleInit {
         board: JSON.parse(JSON.stringify(hand.board)),
         boards: hand.boards.length > 1 ? JSON.parse(JSON.stringify(hand.boards)) : undefined,
         results: JSON.parse(JSON.stringify(pots)),
+        bounty: bounty ? JSON.parse(JSON.stringify(bounty)) : undefined,
         players: JSON.parse(JSON.stringify(players)),
         actions: JSON.parse(JSON.stringify(hand.actions)),
         remainingDeck: JSON.parse(JSON.stringify(hand.deck.peekRemaining())),
@@ -965,6 +1006,15 @@ export class TablesService implements OnModuleInit {
         if (!seat?.playerId) continue;
         await this.prisma.chipTransaction.create({
           data: { userId: seat.playerId, tableId, type: "win", amount: winner.amount },
+        });
+      }
+    }
+
+    if (bounty) {
+      const seat = runtime.table.seats[bounty.seatIndex];
+      if (seat?.playerId) {
+        await this.prisma.chipTransaction.create({
+          data: { userId: seat.playerId, tableId, type: "bounty", amount: bounty.amount },
         });
       }
     }
@@ -1029,6 +1079,7 @@ export class TablesService implements OnModuleInit {
           board: h.board as unknown as HandLogEntry["board"],
           boards: (h.boards as unknown as HandLogEntry["boards"]) ?? null,
           results,
+          bounty: (h.bounty as unknown as HandLogEntry["bounty"]) ?? null,
           players,
           actions: h.actions as unknown as HandLogEntry["actions"],
           playedAt: h.playedAt.toISOString(),
@@ -1076,6 +1127,7 @@ export class TablesService implements OnModuleInit {
         board: row.board as unknown as Card[],
         boards: (row.boards as unknown as Card[][] | null) ?? null,
         results: row.results as unknown as PotResult[],
+        bounty: (row.bounty as unknown as PotShare | null) ?? null,
         players,
         actions: row.actions as unknown as HandActionLogEntry[],
         remainingDeck: row.remainingDeck as unknown as Card[],

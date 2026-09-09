@@ -182,8 +182,12 @@ model Hand {
   board            Json
   /// Card[][] per board, only populated for multi-board (double/triple board bomb pot) hands.
   boards           Json?
-  /// Serialized ShowdownResult (pots, winners) from @5lapnow/game-engine.
+  /// Serialized PotResult[] (pots, winners) from @5lapnow/game-engine's ShowdownResult.pots.
   results          Json
+  /// Serialized PotShare from ShowdownResult.bounty — a GameDefinition.bounty side-payment, if
+  /// the game defines one and a winner qualified this hand. Kept separate from `results` since
+  /// it's not a share of any pot in there (see ShowdownResult.bounty's own doc comment).
+  bounty           Json?
   /// Snapshot of {seatIndex, userId, displayName, totalContributed, stackBefore, stackAfter, holeCards}
   /// at the time this hand was played. `holeCards` is populated for every seat (including folded/never-shown
   /// ones) — visibility is enforced at read time (replay API), not write time: a viewer only ever sees their
@@ -252,6 +256,7 @@ enum ChipTransactionType {
   buy_in
   cash_out
   win
+  bounty
 }
 
 model ChipTransaction {

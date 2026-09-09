@@ -1,5 +1,5 @@
 import type { Card } from "@5lapnow/cards";
-import type { GameDefinition, HandActionLogEntry, PotResult } from "@5lapnow/game-engine";
+import type { GameDefinition, HandActionLogEntry, PotResult, PotShare } from "@5lapnow/game-engine";
 import { recentlyDealtCounts } from "@5lapnow/game-engine";
 import type { HandLogPlayer, HandPlayerView, HandView, PokerReplayStep } from "@5lapnow/shared-types";
 import { mustShowSeatsFromResults } from "../table-snapshot";
@@ -12,6 +12,7 @@ export interface PokerHandReplayRow {
   board: Card[];
   boards: Card[][] | null;
   results: PotResult[];
+  bounty: PotShare | null;
   players: HandLogPlayer[];
   actions: HandActionLogEntry[];
   remainingDeck: Card[];
@@ -141,6 +142,7 @@ export function buildPokerReplay(row: PokerHandReplayRow, gameDefinition: GameDe
       turnSeatIndex: null,
       players: playerViews,
       results: isFinalStep ? row.results : null,
+      bounty: isFinalStep ? row.bounty : null,
       legalActions: null,
       lastAction,
     };

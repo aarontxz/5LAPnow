@@ -140,9 +140,16 @@ export function playChipsSound(strength: "post" | "call" | "bet"): void {
   playFile("/sounds/bet.mp3", volume);
 }
 
-/** Clang: an uploaded slurp sound for an Eat (apps/web/public/sounds/slurp.mp3). */
-export function playEatSound(): void {
-  playFile("/sounds/slurp.mp3");
+/**
+ * Clang: an uploaded slurp sound for an Eat (apps/web/public/sounds/slurp.mp3),
+ * repeated once per card eaten (a 2-card eat slurps twice, a 3-card eat
+ * thrice) so the sound scales with how big the eat was.
+ */
+export function playEatSound(cardsEaten = 1): void {
+  const times = Math.max(1, Math.round(cardsEaten));
+  for (let i = 0; i < times; i++) {
+    setTimeout(() => playFile("/sounds/slurp.mp3"), i * 220);
+  }
 }
 
 /** An uploaded win sound (apps/web/public/sounds/win.wav) — the viewer's own seat gained money from a hand/round that just completed. */

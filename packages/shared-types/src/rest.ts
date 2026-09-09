@@ -1,5 +1,5 @@
 import type { Card } from "@5lapnow/cards";
-import type { HandActionLogEntry, PotResult } from "@5lapnow/game-engine";
+import type { HandActionLogEntry, PotResult, PotShare } from "@5lapnow/game-engine";
 import type { ClangActionLogEntry, ClangHandCategory, ClangPayment } from "@5lapnow/clang-engine";
 import type { CardFlipActionLogEntry, CardFlipPayment } from "@5lapnow/card-flip-engine";
 
@@ -74,6 +74,8 @@ export interface HandLogEntry {
   /** Populated only for multi-board (double/triple board bomb pot) hands; null otherwise. */
   boards: Card[][] | null;
   results: PotResult[];
+  /** A `GameDefinition.bounty` payout for this hand, if the game defines one and a winner qualified — a side-payment on top of `results`, not part of it. */
+  bounty: PotShare | null;
   /** Who was in each seat when this hand was played, since seats can turn over later. */
   players: HandLogPlayer[];
   /** Ordered log of every posted blind/ante and player action taken during the hand. */

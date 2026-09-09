@@ -384,6 +384,7 @@ export function buildTableSnapshot(runtime: RuntimeTable, viewerUserId: string |
       turnSeatIndex,
       players,
       results: hand.results?.pots ?? null,
+      bounty: hand.results?.bounty ?? null,
       legalActions,
       lastAction,
     };

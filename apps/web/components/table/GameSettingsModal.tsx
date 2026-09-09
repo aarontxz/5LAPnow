@@ -12,6 +12,8 @@ const FIELD_SPECS: Record<EffectiveGameConfig["kind"], Array<{ key: string; labe
     { key: "smallBlind", label: "Small blind", min: 0 },
     { key: "bigBlind", label: "Big blind", min: 0 },
     { key: "ante", label: "Ante", min: 0 },
+    // Only editable while the 2-7 bounty is switched on — see bountyOn below.
+    { key: "bountyPayoutPerOpponent", label: "2-7 bounty (per opponent)", min: 0 },
   ],
   clang: [
     { key: "stake", label: "Stake", min: 1 },
@@ -43,6 +45,7 @@ export function GameSettingsModal({
   const router = useRouter();
   const [config, setConfig] = useState<EffectiveGameConfig | null>(null);
   const [fields, setFields] = useState<Record<string, string>>({});
+  const [bountyOn, setBountyOn] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [confirmingLeave, setConfirmingLeave] = useState(false);
@@ -61,6 +64,7 @@ export function GameSettingsModal({
           initial[spec.key] = String((c as unknown as Record<string, number>)[spec.key]);
         }
         setFields(initial);
+        setBountyOn(c.kind === "poker" && c.bountyEnabled);
       })
       .catch(() => setError("Couldn't load current settings."))
       .finally(() => setLoading(false));
@@ -68,9 +72,8 @@ export function GameSettingsModal({
 
   function save() {
     if (!config) return;
-    const specs = FIELD_SPECS[config.kind];
-    const payload: Record<string, number> = {};
-    for (const spec of specs) {
+    const payload: Record<string, number | boolean> = {};
+    for (const spec of FIELD_SPECS[config.kind].filter(isVisible)) {
       const raw = fields[spec.key];
       const value = Number(raw);
       if (raw === undefined || raw.trim() === "" || !Number.isFinite(value) || value < spec.min) {
@@ -79,8 +82,20 @@ export function GameSettingsModal({
       }
       payload[spec.key] = value;
     }
+    if (config.kind === "poker" && config.bountyAvailable) payload.bountyEnabled = bountyOn;
     onSave(payload as unknown as Omit<SetGameConfigPayload, "tableId">);
     onClose();
+  }
+
+  /**
+   * The bounty payout only exists as a setting while the bounty itself is on,
+   * and the whole thing is hidden for games where the 2-7 combo is unmakeable
+   * (anything not dealing exactly two hole cards). Hidden fields are also
+   * skipped by save()'s validation, so a blank one can't block a save.
+   */
+  function isVisible(spec: { key: string }): boolean {
+    if (spec.key !== "bountyPayoutPerOpponent") return true;
+    return config?.kind === "poker" && config.bountyAvailable && bountyOn;
   }
 
   const gameLabel = config?.kind === "poker" ? "Poker" : config?.kind === "clang" ? "Clang" : config?.kind === "cardflip" ? "10 Card Flip" : "";
@@ -98,8 +113,26 @@ export function GameSettingsModal({
                 Settings can't be changed while a hand or round is in progress.
               </p>
             )}
+            {config.kind === "poker" && config.bountyAvailable && (
+              <label className="flex cursor-pointer items-start gap-3 rounded-lg border border-white/10 bg-black/20 px-3 py-2.5">
+                <input
+                  type="checkbox"
+                  checked={bountyOn}
+                  disabled={!canEdit}
+                  onChange={(e) => setBountyOn(e.target.checked)}
+                  className="mt-0.5 h-4 w-4 shrink-0 accent-purple-500 disabled:cursor-not-allowed disabled:opacity-40"
+                />
+                <span className="text-xs">
+                  <span className="block text-white/80">2-7 bounty</span>
+                  <span className="block text-white/40">
+                    Win a pot holding exactly a 2 and a 7 (suited or offsuit) and every other player dealt in pays you.
+                  </span>
+                </span>
+              </label>
+            )}
+
             <div className="flex flex-col gap-3">
-              {FIELD_SPECS[config.kind].map((spec) => (
+              {FIELD_SPECS[config.kind].filter(isVisible).map((spec) => (
                 <div key={spec.key}>
                   <label className="mb-1 block text-xs text-white/50">{spec.label}</label>
                   <input

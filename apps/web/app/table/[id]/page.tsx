@@ -161,6 +161,7 @@ export default function TablePage({ params }: { params: Promise<{ id: string }> 
   const hand = snapshot?.hand ?? null;
   const isComplete = hand?.phase === "complete";
   const winners: PotShare[] = isComplete && hand?.results ? hand.results.flatMap((pot) => [...pot.hiWinners, ...pot.loWinners]) : [];
+  if (isComplete && hand?.bounty) winners.push(hand.bounty);
 
   useHandActionSounds(hand, snapshot?.seats);
   useGameStartSound(hand?.handNumber ?? snapshot?.clangRound?.roundNumber ?? snapshot?.cardFlipRound?.roundNumber ?? null);
@@ -268,7 +269,7 @@ export default function TablePage({ params }: { params: Promise<{ id: string }> 
     const timer = setTimeout(() => setActiveEat(null), EAT_BANNER_MS);
     return () => clearTimeout(timer);
   }, [clangLastEat?.actionIndex]);
-  useEatSound(snapshot?.clangRound?.roundNumber ?? null, clangLastEat);
+  useEatSound(snapshot?.clangRound?.roundNumber ?? null, clangLastEat, snapshot?.clangRound?.eatPaymentPerCard ?? null);
   useClangCalledSound(snapshot?.clangRound?.roundNumber ?? null, snapshot?.clangRound?.result ?? null);
   useClangPlaySound(snapshot?.clangRound?.roundNumber ?? null, snapshot?.clangRound?.lastPlay ?? null, snapshot?.seats);
   useClangDrawSound(

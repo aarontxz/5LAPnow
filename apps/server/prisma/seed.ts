@@ -1,5 +1,12 @@
 import { PrismaClient } from "@prisma/client";
-import { NO_LIMIT_TEXAS_HOLDEM, DOUBLE_BOARD_BOMB_POT, TRIPLE_BOARD_BOMB_POT, ESG, GameDefinition } from "@5lapnow/game-engine";
+import {
+  NO_LIMIT_TEXAS_HOLDEM,
+  DOUBLE_BOARD_BOMB_POT,
+  TRIPLE_BOARD_BOMB_POT,
+  ESG,
+  POT_LIMIT_OMAHA,
+  GameDefinition,
+} from "@5lapnow/game-engine";
 import { parseClangGameDefinition } from "@5lapnow/clang-engine";
 import { parseCardFlipGameDefinition } from "@5lapnow/card-flip-engine";
 
@@ -46,6 +53,7 @@ async function main() {
   await seedGame(DOUBLE_BOARD_BOMB_POT);
   await seedGame(TRIPLE_BOARD_BOMB_POT);
   await seedGame(ESG);
+  await seedGame(POT_LIMIT_OMAHA);
   await seedClang();
   await seedCardFlip();
 }

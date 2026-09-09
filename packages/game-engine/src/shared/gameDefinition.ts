@@ -62,6 +62,27 @@ export const HandRankingSchema = z.object({
 });
 export type HandRanking = z.infer<typeof HandRankingSchema>;
 
+/**
+ * A per-hand bonus side-payment, independent of normal pot winnings: if a
+ * player wins a pot while holding exactly these two hole-card ranks (e.g.
+ * 2 and 7 for a "2-7 bounty" game), every other player dealt into that hand
+ * pays them `payoutPerOpponent` chips directly, on top of whatever they won
+ * from the pot itself. Suits are irrelevant — a suited 2-7 qualifies just as
+ * an offsuit one does.
+ *
+ * This is a *two-card* combo by construction, so it can only ever be made in
+ * a game that deals exactly two hole cards: a four-card hand (Omaha) holding
+ * a 2 and a 7 alongside two other cards does NOT qualify. `matchesBounty` in
+ * pots.ts enforces that at settlement, and `dealsTwoHoleCards` below is what
+ * callers use to decide whether offering a bounty for a game makes sense at
+ * all.
+ */
+export const BountySchema = z.object({
+  ranks: z.tuple([z.number().int().min(2).max(14), z.number().int().min(2).max(14)]),
+  payoutPerOpponent: z.number().min(0),
+});
+export type Bounty = z.infer<typeof BountySchema>;
+
 export const GameDefinitionSchema = z.object({
   id: z.string().min(1),
   name: z.string().min(1),
@@ -78,8 +99,29 @@ export const GameDefinitionSchema = z.object({
   boards: z.number().int().min(1).max(4).default(1),
   /** If true, a folded player's hole cards are immediately returned to the deck and reshuffled in. */
   reshuffleFoldedCardsIntoDeck: z.boolean().default(false),
+  /** Optional bonus side-payment for winning a pot with a specific two-card hole-card combo (e.g. 2-7). Usually set per-table rather than per-game — see PokerConfigOverride.bountyEnabled in @5lapnow/shared-types. */
+  bounty: BountySchema.optional(),
 });
 export type GameDefinition = z.infer<typeof GameDefinitionSchema>;
+
+/**
+ * The most hole cards any one player can hold at once during a hand: the sum
+ * of every street's `dealHoleCards`, raised to any street's `redrawHoleCardsTo`
+ * (which tops a hand up *toward* an absolute count rather than adding to it).
+ */
+export function maxHoleCards(def: GameDefinition): number {
+  let count = 0;
+  for (const street of def.streets) {
+    count += street.dealHoleCards;
+    if (street.redrawHoleCardsTo !== undefined) count = Math.max(count, street.redrawHoleCardsTo);
+  }
+  return count;
+}
+
+/** Whether a two-card combo (i.e. a `bounty`) is even makeable in this game — see BountySchema. */
+export function dealsTwoHoleCards(def: GameDefinition): boolean {
+  return maxHoleCards(def) === 2;
+}
 
 export function parseGameDefinition(input: unknown): GameDefinition {
   return GameDefinitionSchema.parse(input);

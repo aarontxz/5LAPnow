@@ -6,7 +6,10 @@ import {
   describeEvaluatedHand,
   Card,
   EvaluatedHand,
+  RANK_LABELS,
+  Rank,
 } from "@5lapnow/cards";
+import { Bounty } from "./gameDefinition.js";
 import { TableState } from "./table.js";
 import { HandState, PotResult, PotShare, ShowdownResult } from "./handState.js";
 
@@ -169,7 +172,9 @@ export function settleShowdown(table: TableState, hand: HandState): ShowdownResu
     awardChips(table, [...pot.hiWinners, ...pot.loWinners]);
   }
 
-  return { pots, revealedSeats, mustShowSeats };
+  const bounty = settleBounty(table, hand, pots);
+
+  return { pots, revealedSeats, mustShowSeats, bounty };
 }
 
 function awardChips(table: TableState, shares: PotShare[]): void {
@@ -177,4 +182,51 @@ function awardChips(table: TableState, shares: PotShare[]): void {
     const seat = table.seats[share.seatIndex];
     if (seat) seat.stack += share.amount;
   }
+}
+
+/**
+ * A bounty combo is exactly two cards, so a hand of any other size can never
+ * match — a four-card Omaha hand holding a 2 and a 7 alongside two other
+ * cards does not qualify, and neither does a hand still short of its full
+ * complement. Suits are ignored entirely: suited and offsuit both pay.
+ */
+function matchesBounty(holeCards: Card[], bounty: Bounty): boolean {
+  if (holeCards.length !== 2) return false;
+  const [a, b] = holeCards as [Card, Card];
+  return (a.rank === bounty.ranks[0] && b.rank === bounty.ranks[1]) || (a.rank === bounty.ranks[1] && b.rank === bounty.ranks[0]);
+}
+
+/**
+ * A bounty is a direct player-to-player side-payment, not a redistribution
+ * of chips already collected into a pot — unlike `awardChips`, it debits the
+ * paying seats itself, capped at whatever they still have (a bounty never
+ * puts a seat's stack below zero). Only the lowest-seat-index qualifying
+ * winner is paid per hand; two different winners both qualifying in the same
+ * hand is rare enough in practice not to need split/double-charge handling.
+ */
+function settleBounty(table: TableState, hand: HandState, pots: PotResult[]): PotShare | null {
+  const bountyRule = hand.gameDefinition.bounty;
+  if (!bountyRule) return null;
+
+  const winnerSeats = [...new Set(pots.flatMap((p) => p.hiWinners.map((s) => s.seatIndex)))].sort((a, b) => a - b);
+  const winnerSeatIndex = winnerSeats.find((s) => matchesBounty(hand.players.get(s)?.holeCards ?? [], bountyRule));
+  if (winnerSeatIndex === undefined) return null;
+
+  let collected = 0;
+  for (const payerSeatIndex of hand.players.keys()) {
+    if (payerSeatIndex === winnerSeatIndex) continue;
+    const payerSeat = table.seats[payerSeatIndex];
+    if (!payerSeat) continue;
+    const amount = Math.min(bountyRule.payoutPerOpponent, payerSeat.stack);
+    if (amount <= 0) continue;
+    payerSeat.stack -= amount;
+    collected += amount;
+  }
+  if (collected <= 0) return null;
+
+  const winnerSeat = table.seats[winnerSeatIndex];
+  if (winnerSeat) winnerSeat.stack += collected;
+
+  const label = `${RANK_LABELS[bountyRule.ranks[0] as Rank]}-${RANK_LABELS[bountyRule.ranks[1] as Rank]}`;
+  return { seatIndex: winnerSeatIndex, amount: collected, description: `${label} bounty` };
 }
