@@ -12,6 +12,7 @@ import {
   PotResult,
   PotShare,
   RabbitReveal,
+  ReservedCommunityDeal,
   seatPlayer,
   standPlayer,
   TableConfig,
@@ -799,12 +800,7 @@ export class TablesService implements OnModuleInit {
 
     const alreadyComputed = hand.rabbitBoard !== null;
     if (!alreadyComputed) {
-      const { rabbitBoard, rabbitBoards } = computeRabbitReveal(
-        hand.gameDefinition,
-        hand.streetIndex,
-        hand.boards.length,
-        hand.deck.peekRemaining()
-      );
+      const { rabbitBoard, rabbitBoards } = computeRabbitReveal(hand.streetIndex, hand.boards.length, hand.reservedCommunityDeals);
       if (rabbitBoard.length === 0) return; // all community cards were already dealt
       hand.rabbitBoard = rabbitBoard;
       hand.rabbitBoards = rabbitBoards;
@@ -996,7 +992,10 @@ export class TablesService implements OnModuleInit {
         bounty: bounty ? JSON.parse(JSON.stringify(bounty)) : undefined,
         players: JSON.parse(JSON.stringify(players)),
         actions: JSON.parse(JSON.stringify(hand.actions)),
-        remainingDeck: JSON.parse(JSON.stringify(hand.deck.peekRemaining())),
+        // Not the leftover deck any more — every street's board cards were
+        // already carved out and fixed at hand init (reservedCommunityDeals),
+        // so a later rabbit hunt reveals those instead of drawing fresh ones.
+        remainingDeck: JSON.parse(JSON.stringify(hand.reservedCommunityDeals)),
       },
     });
 
@@ -1130,7 +1129,6 @@ export class TablesService implements OnModuleInit {
         bounty: (row.bounty as unknown as PotShare | null) ?? null,
         players,
         actions: row.actions as unknown as HandActionLogEntry[],
-        remainingDeck: row.remainingDeck as unknown as Card[],
         rabbitBoard: (row.rabbitBoard as unknown as Card[] | null) ?? null,
         rabbitBoards: (row.rabbitBoards as unknown as Card[][] | null) ?? null,
       },
@@ -1240,7 +1238,7 @@ export class TablesService implements OnModuleInit {
     const gameDefinition = await this.gamesService.getDefinition(row.gameDefinitionId);
     const finalStreetIndex = this.deriveFinalStreetIndex(row.actions as unknown as HandActionLogEntry[], gameDefinition);
     const boardsCount = (row.boards as unknown as Card[][] | null)?.length ?? 1;
-    const reveal = computeRabbitReveal(gameDefinition, finalStreetIndex, boardsCount, row.remainingDeck as unknown as Card[]);
+    const reveal = computeRabbitReveal(finalStreetIndex, boardsCount, row.remainingDeck as unknown as (ReservedCommunityDeal | null)[]);
 
     if (reveal.rabbitBoard.length > 0) {
       await this.prisma.hand.update({

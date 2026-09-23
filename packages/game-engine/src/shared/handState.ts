@@ -109,6 +109,11 @@ export interface RedrawLogEntry {
 
 export type HandActionLogEntry = BettingActionLogEntry | DealCommunityCardsLogEntry | DealHoleCardsLogEntry | RedrawLogEntry;
 
+/** A street's community-card deal, drawn from the deck once at hand start (see `HandState.reservedCommunityDeals`) rather than live when that street is reached. */
+export interface ReservedCommunityDeal {
+  boardCards: Card[][];
+}
+
 export interface HandState {
   gameDefinition: GameDefinition;
   handNumber: number;
@@ -117,11 +122,22 @@ export interface HandState {
   /** Flat union of all boards; equals boards[0] for single-board games. */
   board: Card[];
   boards: Card[][];
+  /**
+   * Every future street's community-card deal, drawn and fixed at hand init
+   * (indexed by street index; null for streets that don't deal community
+   * cards) — so a card is never both a possible board card and a possible
+   * hole card. This is what keeps redraw and `reshuffleFoldedCardsIntoDeck`
+   * (folded hole cards going back into the deck) from ever letting a
+   * discarded card resurface on the turn or river: those draws only ever
+   * touch `deck`, which no longer contains any card reserved here.
+   */
+  reservedCommunityDeals: (ReservedCommunityDeal | null)[];
   /** Community cards that would have come next — null until any player rabbit hunts (or N/A, all cards dealt). Same cards for everyone once drawn; who can actually see them is gated per-viewer by `rabbitRevealedSeats`. */
   rabbitBoard: Card[] | null;
   rabbitBoards: Card[][] | null;
   /** Seats that have individually chosen to rabbit hunt — each sees `rabbitBoard`/`rabbitBoards` privately once their own seat is in here. */
   rabbitRevealedSeats: Set<number>;
+  /** No longer holds any card reserved in `reservedCommunityDeals` — see there. */
   deck: Deck;
   players: Map<number, HandPlayerState>;
   /** Acting order for this hand (seat indices), starting left of the button. */

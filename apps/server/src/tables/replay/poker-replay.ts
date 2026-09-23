@@ -15,7 +15,6 @@ export interface PokerHandReplayRow {
   bounty: PotShare | null;
   players: HandLogPlayer[];
   actions: HandActionLogEntry[];
-  remainingDeck: Card[];
   rabbitBoard: Card[] | null;
   rabbitBoards: Card[][] | null;
 }

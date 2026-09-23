@@ -166,7 +166,7 @@ export default function LobbyPage() {
             Signed in as <span className="text-white">{session.email}</span>
           </p>
         ) : (
-          <p className="text-sm text-white/60">Sign in with Google to host a table or generate a custom game.</p>
+          <p className="text-sm text-white/60">Sign in with Google to generate a custom game.</p>
         )}
         <div className="flex items-center gap-4">
           <a
@@ -200,14 +200,12 @@ export default function LobbyPage() {
           </div>
           <HoverBorderGradient
             onClick={createTable}
-            disabled={!session.googleLinked}
             className="w-full sm:w-auto"
-            containerClassName={`w-full sm:w-auto ${!session.googleLinked ? "opacity-40" : ""}`}
+            containerClassName="w-full sm:w-auto"
           >
             Create table
           </HoverBorderGradient>
         </div>
-        {!session.googleLinked && <p className="mt-3 text-sm text-white/40">Sign in with Google above to host a table.</p>}
         {error && <p className="mt-3 text-sm text-red-400">{error}</p>}
       </section>
 

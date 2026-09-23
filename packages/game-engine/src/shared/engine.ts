@@ -4,6 +4,7 @@ import { activeSeats, nextButtonSeatIndex, TableState } from "./table.js";
 import {
   HandPlayerState,
   HandState,
+  ReservedCommunityDeal,
   activeHandPlayers,
   currentStreetName,
   orderSeatsFromButton,
@@ -59,6 +60,16 @@ export class DeclarativeEngine {
 
     const boardArrays: Card[][] = Array.from({ length: this.gameDefinition.boards }, () => [] as Card[]);
 
+    // Carve every street's board cards out of the deck now, before a single
+    // hole card is dealt, so they can never later collide with a hole card
+    // or a folded card returned to the deck (see reservedCommunityDeals doc).
+    const reservedCommunityDeals: (ReservedCommunityDeal | null)[] = this.gameDefinition.streets.map((street) => {
+      if (street.dealCommunityCards <= 0) return null;
+      deck.burn();
+      const boardCards = Array.from({ length: this.gameDefinition.boards }, () => deck.draw(street.dealCommunityCards));
+      return { boardCards };
+    });
+
     const hand: HandState = {
       gameDefinition: this.gameDefinition,
       handNumber,
@@ -66,6 +77,7 @@ export class DeclarativeEngine {
       streetIndex: -1,
       board: boardArrays[0]!,
       boards: boardArrays,
+      reservedCommunityDeals,
       rabbitBoard: null,
       rabbitBoards: null,
       rabbitRevealedSeats: new Set(),
@@ -131,16 +143,17 @@ export class DeclarativeEngine {
       }
     }
     if (street.dealCommunityCards > 0) {
-      hand.deck.burn();
+      const reserved = hand.reservedCommunityDeals[hand.streetIndex];
+      if (!reserved) throw new Error(`Missing reserved community cards for street ${hand.streetIndex}`);
       if (hand.boards.length > 1) {
         hand.boards.forEach((b, boardIndex) => {
-          const cards = hand.deck.draw(street.dealCommunityCards);
+          const cards = reserved.boardCards[boardIndex] as Card[];
           b.push(...cards);
           hand.actions.push({ streetName: currentStreetName(hand), type: "dealCommunityCards", boardIndex, cards });
         });
         hand.board = hand.boards.flat();
       } else {
-        const cards = hand.deck.draw(street.dealCommunityCards);
+        const cards = reserved.boardCards[0] as Card[];
         hand.board.push(...cards);
         hand.actions.push({ streetName: currentStreetName(hand), type: "dealCommunityCards", boardIndex: 0, cards });
       }
@@ -193,24 +206,15 @@ export class DeclarativeEngine {
     this.dealAndMaybeStartRound(table, hand);
   }
 
-  /** Cards still needed for every future street's guaranteed community-card deal (burn + per-board cards), so redraw never eats into supply community dealing depends on. */
-  private reservedForFutureCommunityDeals(hand: HandState): number {
-    let reserve = 0;
-    for (let i = hand.streetIndex + 1; i < this.gameDefinition.streets.length; i++) {
-      const s = this.gameDefinition.streets[i];
-      if (s && s.dealCommunityCards > 0) reserve += 1 + s.dealCommunityCards * hand.boards.length;
-    }
-    return reserve;
-  }
-
   /**
    * Tops every active player's hole cards up toward `target`, deck
-   * permitting — but community-card dealing on future streets always takes
-   * priority, so redraw only ever spends what's left after reserving enough
-   * for every remaining street's community deal. If what's left can't cover
-   * every player's full owed amount, every active player instead draws the
-   * same (smaller) amount — floor(available / activePlayerCount) — and the
-   * shortfall carries forward as a larger "owed" gap at the next redraw.
+   * permitting. Every future street's community cards are already carved out
+   * of the deck at hand init (`reservedCommunityDeals`), so `deck.remaining`
+   * here is exactly what's safe to spend — no separate reservation math
+   * needed. If it can't cover every player's full owed amount, every active
+   * player instead draws the same (smaller) amount — floor(available /
+   * activePlayerCount) — and the shortfall carries forward as a larger
+   * "owed" gap at the next redraw.
    */
   private performRedraw(hand: HandState, target: number): void {
     const activeSeatIndices = hand.seatOrder.filter((seatIndex) => {
@@ -229,7 +233,7 @@ export class DeclarativeEngine {
     }
     if (totalOwed === 0) return;
 
-    const available = Math.max(0, hand.deck.remaining - this.reservedForFutureCommunityDeals(hand));
+    const available = hand.deck.remaining;
 
     if (available >= totalOwed) {
       for (const seatIndex of activeSeatIndices) {

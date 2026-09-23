@@ -1,5 +1,5 @@
 import { Card } from "@5lapnow/cards";
-import { GameDefinition } from "./gameDefinition.js";
+import { ReservedCommunityDeal } from "./handState.js";
 
 export interface RabbitReveal {
   rabbitBoard: Card[];
@@ -7,40 +7,35 @@ export interface RabbitReveal {
 }
 
 /**
- * Deals the community cards that would have come on every street after
- * `fromStreetIndex`, purely from `remainingDeckCards` (in order) — cosmetic
- * only, never touches the real board. Pure/non-mutating so it works
- * identically whether fed a live hand's leftover deck or a persisted
- * `Hand.remainingDeck` snapshot for a replay, long after the live hand is
- * gone.
+ * Reveals the community cards that would have come on every street after
+ * `fromStreetIndex`, straight from those streets' `ReservedCommunityDeal`s —
+ * cosmetic only, never touches the real board. Every board card is carved
+ * out of the deck and fixed at hand init (see `HandState.reservedCommunityDeals`),
+ * so this reports the true predetermined cards rather than drawing fresh
+ * ones — a fold's cards reshuffled back into the deck can never leak in
+ * here either. Pure/non-mutating so it works identically whether fed a live
+ * hand's `reservedCommunityDeals` or a persisted `Hand.remainingDeck`
+ * snapshot for a replay, long after the live hand is gone.
  */
 export function computeRabbitReveal(
-  gameDefinition: GameDefinition,
   fromStreetIndex: number,
   boardsCount: number,
-  remainingDeckCards: Card[]
+  reservedCommunityDeals: (ReservedCommunityDeal | null)[]
 ): RabbitReveal {
-  const cards = [...remainingDeckCards];
-  const draw = (n: number): Card[] => cards.splice(0, n);
-  const burn = (): void => {
-    cards.shift();
-  };
-
-  const remainingStreets = gameDefinition.streets.slice(fromStreetIndex + 1).filter((s) => s.dealCommunityCards > 0);
+  const remainingDeals = reservedCommunityDeals
+    .slice(fromStreetIndex + 1)
+    .filter((deal): deal is ReservedCommunityDeal => deal !== null);
 
   if (boardsCount > 1) {
     const rabbitBoards: Card[][] = Array.from({ length: boardsCount }, () => []);
-    for (const street of remainingStreets) {
-      burn();
-      for (const board of rabbitBoards) board.push(...draw(street.dealCommunityCards));
+    for (const deal of remainingDeals) {
+      deal.boardCards.forEach((cards, boardIndex) => rabbitBoards[boardIndex]!.push(...cards));
     }
     return { rabbitBoard: rabbitBoards.flat(), rabbitBoards };
   }
 
   const rabbitBoard: Card[] = [];
-  for (const street of remainingStreets) {
-    burn();
-    rabbitBoard.push(...draw(street.dealCommunityCards));
-  }
+  for (const deal of remainingDeals) rabbitBoard.push(...(deal.boardCards[0] ?? []));
+
   return { rabbitBoard, rabbitBoards: null };
 }

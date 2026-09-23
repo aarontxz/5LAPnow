@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import type { Card } from "@5lapnow/cards";
 import { createEmptyTable, seatPlayer, TableConfig } from "./table.js";
 import { DeclarativeEngine } from "./engine.js";
 import { parseGameDefinition } from "./gameDefinition.js";
@@ -187,5 +188,71 @@ describe("community-card dealing takes priority over redraw", () => {
 
     expect(hand.phase).toBe("showdown");
     for (const board of hand.boards) expect(board).toHaveLength(5);
+  });
+});
+
+// Same shape as ESG: two boards, redraw targets, and folded hands reshuffled
+// back into the deck — exercises the actual bug this reservation fixes.
+const RESERVED_BOARD_TEST_GAME = parseGameDefinition({
+  id: "test-reserved-board",
+  name: "Reserved Board Test",
+  source: "builtin",
+  deck: { jokers: 0 },
+  minPlayers: 2,
+  maxPlayers: 6,
+  bettingStructure: "no-limit",
+  forcedBets: { ante: 0, smallBlind: 1, bigBlind: 2 },
+  handRanking: { mode: "high", splitPot: "none" },
+  boards: 2,
+  reshuffleFoldedCardsIntoDeck: true,
+  streets: [
+    { name: "preflop", dealHoleCards: 6, dealCommunityCards: 0, bettingRound: true },
+    { name: "flop", dealHoleCards: 0, dealCommunityCards: 3, redrawHoleCardsTo: 9, bettingRound: true },
+    { name: "turn", dealHoleCards: 0, dealCommunityCards: 1, redrawHoleCardsTo: 12, bettingRound: true },
+    { name: "river", dealHoleCards: 0, dealCommunityCards: 1, redrawHoleCardsTo: 15, bettingRound: true },
+  ],
+});
+
+describe("board cards are reserved at hand init", () => {
+  it("never lets a folded (and reshuffled) player's cards resurface on a later board", () => {
+    const reservedBoardConfig: TableConfig = { ...config, gameDefinitionId: RESERVED_BOARD_TEST_GAME.id };
+    const table = createEmptyTable(reservedBoardConfig);
+    for (let i = 0; i < 3; i++) seatPlayer(table, i, `p${i}`, `Player${i}`, 1000);
+    const engine = new DeclarativeEngine(RESERVED_BOARD_TEST_GAME, mulberry32(6));
+    const hand = engine.initHand(table, 1);
+
+    // What every street's board cards will be, fixed before a single action happens.
+    const reservedSnapshot = hand.reservedCommunityDeals.map((deal) => deal && deal.boardCards.map((cards) => [...cards]));
+
+    const foldingSeat = hand.bettingRound?.turnSeatIndex as number;
+    const foldingHoleCards = [...(hand.players.get(foldingSeat)?.holeCards ?? [])];
+    engine.applyAction(table, hand, foldingSeat, { type: "fold" });
+
+    let iterations = 0;
+    while (hand.phase === "betting" && iterations < 200) {
+      iterations++;
+      const seatIndex = hand.bettingRound?.turnSeatIndex;
+      if (seatIndex === null || seatIndex === undefined) {
+        if (engine.hasMoreDealing(hand)) engine.continueDealing(table, hand);
+        continue;
+      }
+      const legal = engine.getLegalActions(table, hand, seatIndex);
+      engine.applyAction(table, hand, seatIndex, legal.canCheck ? { type: "check" } : { type: "call" });
+    }
+    while (engine.hasMoreDealing(hand)) engine.continueDealing(table, hand);
+
+    expect(hand.phase).toBe("showdown");
+
+    // The final board must equal exactly what was reserved at hand init —
+    // nothing folded/reshuffled mid-hand ever fed into it.
+    const expectedBoards: Card[][] = Array.from({ length: RESERVED_BOARD_TEST_GAME.boards }, () => []);
+    for (const deal of reservedSnapshot) {
+      if (!deal) continue;
+      deal.forEach((cards, boardIndex) => expectedBoards[boardIndex]!.push(...cards));
+    }
+    expect(hand.boards).toEqual(expectedBoards);
+
+    const boardFlat = hand.boards.flat();
+    for (const card of foldingHoleCards) expect(boardFlat).not.toContainEqual(card);
   });
 });

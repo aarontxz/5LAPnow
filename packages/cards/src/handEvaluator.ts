@@ -226,7 +226,7 @@ export function describeEvaluatedHand(hand: EvaluatedHand, mode: HandRankingMode
   const [category, k1, k2] = hand.score;
   switch (category) {
     case 8:
-      return `Straight Flush, ${rankName(k1)} High`;
+      return k1 === 14 ? "Royal Flush" : `Straight Flush, ${rankName(k1)} High`;
     case 7:
       return `Four of a Kind, ${rankName(k1)}s`;
     case 6:
