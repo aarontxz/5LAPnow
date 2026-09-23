@@ -56,6 +56,7 @@ function buildHandState(players: HandPlayerState[], gameDefinition: GameDefiniti
     streetIndex: 3,
     board: [],
     boards: [[]],
+    reservedCommunityDeals: [],
     rabbitBoard: null,
     rabbitBoards: null,
     rabbitRevealedSeats: new Set(),
