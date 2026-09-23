@@ -261,3 +261,45 @@ export function evaluateQualifyingLow(
   if (highestKicker > qualifier) return null;
   return best;
 }
+
+/**
+ * Omaha-style qualifying low: exactly `exactHoleCount` hole cards combined
+ * with the rest from `communityCards` (unlike evaluateQualifyingLow, which
+ * picks freely from all cards combined). Returns null if no combination
+ * qualifies under `qualifier`.
+ */
+export function evaluateQualifyingLowExact(
+  holeCards: Card[],
+  communityCards: Card[],
+  exactHoleCount: number,
+  qualifier = 8
+): EvaluatedHand | null {
+  const communityCount = 5 - exactHoleCount;
+  if (exactHoleCount < 0 || communityCount < 0) {
+    throw new Error(`exactHoleCount must be between 0 and 5, got ${exactHoleCount}`);
+  }
+  if (holeCards.length < exactHoleCount) {
+    throw new Error(`Need at least ${exactHoleCount} hole cards, got ${holeCards.length}`);
+  }
+  if (communityCards.length < communityCount) {
+    throw new Error(`Need at least ${communityCount} community cards, got ${communityCards.length}`);
+  }
+
+  const holeCombos = kCombinations(holeCards, exactHoleCount);
+  const communityCombos = kCombinations(communityCards, communityCount);
+  const { scoreOptions } = modeConfig("low-ace-to-five");
+
+  let best: EvaluatedHand | null = null;
+  for (const h of holeCombos) {
+    for (const c of communityCombos) {
+      const combo = [...h, ...c];
+      const score = scoreFiveCards(combo, scoreOptions);
+      if (score[0] !== 0) continue; // any pair or better disqualifies an 8-or-better low
+      if (Math.max(...score.slice(1)) > qualifier) continue;
+      if (!best || compareScoreArrays(score, best.score) < 0) {
+        best = { score, cards: combo };
+      }
+    }
+  }
+  return best;
+}

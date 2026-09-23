@@ -10,7 +10,7 @@ export const POT_LIMIT_OMAHA = parseGameDefinition({
   maxPlayers: 10,
   bettingStructure: "pot-limit",
   forcedBets: { ante: 0, smallBlind: 1, bigBlind: 2 },
-  handRanking: { mode: "high", splitPot: "none" },
+  handRanking: { mode: "high", splitPot: "none", exactHoleCardsUsed: 2 },
   streets: [
     { name: "preflop", dealHoleCards: 4, dealCommunityCards: 0, bettingRound: true },
     { name: "flop", dealHoleCards: 0, dealCommunityCards: 3, bettingRound: true },

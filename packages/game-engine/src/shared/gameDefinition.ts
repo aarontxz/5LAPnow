@@ -41,9 +41,10 @@ export const HandRankingSchema = z.object({
    * If set, a showdown hand must use exactly this many hole cards plus the
    * rest from the community cards (Omaha-style). If omitted, any
    * combination of hole + community cards may be used (Hold'em-style).
-   * Only consulted for board categories under `scoring: "point-race"` — the
-   * hand-only category (`includeHandOnlyCategory`) always picks freely from
-   * hole cards alone.
+   * Consulted for every board category, under both `scoring: "best-hand"`
+   * and `"point-race"`, and for both sides of a `"hi-lo-8-or-better"` split —
+   * the hand-only category (`includeHandOnlyCategory`) always picks freely
+   * from hole cards alone.
    */
   exactHoleCardsUsed: z.number().int().min(0).optional(),
   /**

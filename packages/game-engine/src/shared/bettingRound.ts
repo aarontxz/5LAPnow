@@ -89,7 +89,9 @@ export function getLegalActions(table: TableState, hand: HandState, seatIndex: n
   const allInTo = player.committedThisStreet + seat.stack;
   const maxRaiseTo = hand.gameDefinition.bettingStructure === "pot-limit" ? potLimitMaxRaiseTo(table, hand, seatIndex) : allInTo;
   const minRaiseTo = Math.min(maxRaiseTo, round.currentBet + round.minRaiseIncrement);
-  const canBetOrRaise = seat.stack > 0 && maxRaiseTo > round.currentBet;
+  // hasActedThisRound stays true across an incomplete (short all-in) raise, meaning it didn't
+  // reopen betting for this player — they're only back here to call the extra, not to raise again.
+  const canBetOrRaise = seat.stack > 0 && maxRaiseTo > round.currentBet && !player.hasActedThisRound;
 
   return {
     canFold: true,
@@ -146,11 +148,19 @@ export function applyAction(table: TableState, hand: HandState, seatIndex: numbe
     case "raise": {
       const { toAmount } = action;
       if (toAmount <= round.currentBet) throw new Error("Bet/raise must exceed the current bet");
+      if (player.hasActedThisRound) {
+        throw new Error("Betting was not reopened for this player by the last incomplete raise; only call or fold is allowed");
+      }
       const increment = toAmount - player.committedThisStreet;
       if (increment > seat.stack) throw new Error("Cannot bet/raise more than the stack");
       if (hand.gameDefinition.bettingStructure === "pot-limit") {
         const maxTo = potLimitMaxRaiseTo(table, hand, seatIndex);
         if (toAmount > maxTo) throw new Error(`Bet/raise to ${toAmount} exceeds pot-limit max of ${maxTo}`);
+      }
+      // Below-minimum raises are only legal when they commit the player's entire stack.
+      const isAllIn = increment === seat.stack;
+      if (!isAllIn && toAmount < round.currentBet + round.minRaiseIncrement) {
+        throw new Error(`Bet/raise to ${toAmount} is below the minimum of ${round.currentBet + round.minRaiseIncrement}`);
       }
 
       const raiseSize = toAmount - round.currentBet;

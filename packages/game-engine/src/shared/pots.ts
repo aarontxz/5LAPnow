@@ -2,6 +2,7 @@ import {
   evaluateBestHand,
   evaluateBestHandExact,
   evaluateQualifyingLow,
+  evaluateQualifyingLowExact,
   compareEvaluatedHands,
   describeEvaluatedHand,
   Card,
@@ -68,15 +69,23 @@ export function settleShowdown(table: TableState, hand: HandState): ShowdownResu
     }
 
     const mode = hand.gameDefinition.handRanking.mode;
-    const cardsFor = (seatIndex: number): Card[] => [
-      ...(hand.players.get(seatIndex)?.holeCards ?? []),
-      ...hand.board,
-    ];
+    const exactHoleCardsUsed = hand.gameDefinition.handRanking.exactHoleCardsUsed;
+    const holeCardsOf = (seatIndex: number): Card[] => hand.players.get(seatIndex)?.holeCards ?? [];
+    // Omaha-style games (exactHoleCardsUsed set) must use exactly that many hole cards;
+    // Hold'em-style games pick freely from hole + board combined.
+    const bestHandOn = (seatIndex: number, boardCards: Card[]): EvaluatedHand =>
+      exactHoleCardsUsed !== undefined
+        ? evaluateBestHandExact(holeCardsOf(seatIndex), boardCards, exactHoleCardsUsed, mode)
+        : evaluateBestHand([...holeCardsOf(seatIndex), ...boardCards], mode);
+    const qualifyingLowOn = (seatIndex: number, boardCards: Card[]): EvaluatedHand | null =>
+      exactHoleCardsUsed !== undefined
+        ? evaluateQualifyingLowExact(holeCardsOf(seatIndex), boardCards, exactHoleCardsUsed)
+        : evaluateQualifyingLow([...holeCardsOf(seatIndex), ...boardCards]);
 
     if (hand.gameDefinition.handRanking.splitPot === "hi-lo-8-or-better") {
       const potHalf = Math.floor(pot.amount / 2);
       const hiHalf = pot.amount - potHalf; // odd chip goes to the hi side by convention
-      const hiEvals = pot.eligibleSeats.map((s) => ({ seatIndex: s, hand: evaluateBestHand(cardsFor(s), mode) }));
+      const hiEvals = pot.eligibleSeats.map((s) => ({ seatIndex: s, hand: bestHandOn(s, hand.board) }));
       const bestHi = hiEvals.reduce((best, cur) =>
         compareEvaluatedHands(cur.hand, best.hand, mode) > 0 ? cur : best
       );
@@ -85,7 +94,7 @@ export function settleShowdown(table: TableState, hand: HandState): ShowdownResu
         .map((e) => e.seatIndex);
 
       const loEvals = pot.eligibleSeats
-        .map((s) => ({ seatIndex: s, low: evaluateQualifyingLow(cardsFor(s)) }))
+        .map((s) => ({ seatIndex: s, low: qualifyingLowOn(s, hand.board) }))
         .filter((e): e is { seatIndex: number; low: NonNullable<ReturnType<typeof evaluateQualifyingLow>> } => e.low !== null);
 
       const hiDescription = describeEvaluatedHand(bestHi.hand, mode);
@@ -108,7 +117,6 @@ export function settleShowdown(table: TableState, hand: HandState): ShowdownResu
       // highest total points takes the *entire* pot (ties split the pot
       // evenly). Point totals are tracked as integer units (not floats) so
       // that e.g. three 1/3-splits sum to exactly a whole point.
-      const exactHoleCardsUsed = hand.gameDefinition.handRanking.exactHoleCardsUsed;
       const numBoards = hand.boards.length;
       const POINT_SCALE = 2520; // lcm(1..10) — exact for any tie-group size up to the schema's 10-player max
 
@@ -123,12 +131,7 @@ export function settleShowdown(table: TableState, hand: HandState): ShowdownResu
 
       for (let bi = 0; bi < numBoards; bi++) {
         const boardCards = hand.boards[bi] ?? [];
-        awardCategory((s) => {
-          const holeCards = hand.players.get(s)?.holeCards ?? [];
-          return exactHoleCardsUsed !== undefined
-            ? evaluateBestHandExact(holeCards, boardCards, exactHoleCardsUsed, mode)
-            : evaluateBestHand([...holeCards, ...boardCards], mode);
-        });
+        awardCategory((s) => bestHandOn(s, boardCards));
       }
       if (hand.gameDefinition.handRanking.includeHandOnlyCategory) {
         awardCategory((s) => evaluateBestHand(hand.players.get(s)?.holeCards ?? [], mode));
@@ -147,8 +150,7 @@ export function settleShowdown(table: TableState, hand: HandState): ShowdownResu
       for (let bi = 0; bi < numBoards; bi++) {
         const share = bi === 0 ? pot.amount - baseShare * (numBoards - 1) : baseShare;
         const boardCards = hand.boards[bi] ?? [];
-        const evalCards = (s: number): Card[] => [...(hand.players.get(s)?.holeCards ?? []), ...boardCards];
-        const evals = pot.eligibleSeats.map((s) => ({ seatIndex: s, hand: evaluateBestHand(evalCards(s), mode) }));
+        const evals = pot.eligibleSeats.map((s) => ({ seatIndex: s, hand: bestHandOn(s, boardCards) }));
         const best = evals.reduce((a, b) => (compareEvaluatedHands(b.hand, a.hand, mode) > 0 ? b : a));
         const winnerSeats = evals.filter((e) => compareEvaluatedHands(e.hand, best.hand, mode) === 0).map((e) => e.seatIndex);
         const boardShares = withDescription(
@@ -158,7 +160,7 @@ export function settleShowdown(table: TableState, hand: HandState): ShowdownResu
         pot.hiWinners.push(...boardShares);
       }
     } else {
-      const evals = pot.eligibleSeats.map((s) => ({ seatIndex: s, hand: evaluateBestHand(cardsFor(s), mode) }));
+      const evals = pot.eligibleSeats.map((s) => ({ seatIndex: s, hand: bestHandOn(s, hand.board) }));
       const best = evals.reduce((best, cur) => (compareEvaluatedHands(cur.hand, best.hand, mode) > 0 ? cur : best));
       const winnerSeats = evals
         .filter((e) => compareEvaluatedHands(e.hand, best.hand, mode) === 0)
